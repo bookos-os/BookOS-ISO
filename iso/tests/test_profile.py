@@ -63,7 +63,7 @@ class ProfileTests(unittest.TestCase):
                 handler = profile.validate(raw)
                 packages = set(handler.packages.packageList)
                 self.assertTrue({"bookos-shell", "bookos-player", "bookos-clock", "bookos-notepad", "bookos-calc", "bookos-settings", "bookos-store", "bookos-welcome", "bookos-new", "bookos-explorer", "bookos-desktop", "firefox", "dolphin", "kde-partitionmanager"} <= packages)
-                self.assertFalse({"konsole", "bookos-viewer", "bookos-voicerecorder", "openssh-server"} & packages)
+                self.assertFalse({"konsole", "bookos-viewer", "bookos-voice-recorder", "openssh-server"} & packages)
                 self.assertTrue(handler.packages.excludeWeakdeps)
                 self.assertFalse(handler.packages.handleMissing)
                 self.assertNotIn("@^kde-desktop-environment", raw)
@@ -80,7 +80,7 @@ class ProfileTests(unittest.TestCase):
         self.assertIn('BookOS $CHANNEL $VERSION /out $ALLAPPS', script)
 
     def test_optional_apps_remain_opt_in(self):
-        h = profile.validate(profile.render(apps=["bookos-viewer", "bookos-voicerecorder"]))
+        h = profile.validate(profile.render(apps=["bookos-viewer", "bookos-voice-recorder"]))
         self.assertIn("bookos-viewer", h.packages.packageList)
 
     def test_invalid_substitutions_are_rejected(self):
@@ -121,6 +121,7 @@ Boot000A BookOS HD(1,GPT,abcd,0,1)/File(\\EFI\\FEDORA\\SHIMX64.EFI)
                 for path in ("/boot", "/etc/default/grub", "/var/log", "/sys/firmware/efi"):
                     script = script.replace(path, tmp + path)
                 script = script.replace('/usr/libexec/bookos-apply-identity', 'true')
+                script = script.replace('/usr/libexec/bookos-plymouth-language', 'true')
                 mocks = """
 findmnt() { return 0; }
 plymouth-set-default-theme() { return 0; }

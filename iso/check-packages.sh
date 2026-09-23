@@ -21,7 +21,7 @@ tar --transform "s,^\.,$integration," \
 desktop="bookos-desktop-$(spec_version bookos-desktop)"
 tar --transform "s,^\.,$desktop," -czf "$RPM_TOPDIR/SOURCES/$desktop.tar.gz" \
     --exclude='./target' --exclude='./.git' --exclude='./.claude' \
-    -C /sources/BookOS-Envoiroment/bookos-desktop .
+    -C /sources/bookos-desktop .
 cp "$project/rpm/RPM-GPG-KEY-bookos" "$project/rpm/bookos.repo" "$RPM_TOPDIR/SOURCES/"
 python3 "$project/iso/collect-visuals.py" /sources "$RPM_TOPDIR/SOURCES"
 for package in bookos-branding bookos-desktop-integration bookos-desktop bookos-meta bookos-keyring bookos-icons bookos-widgets; do

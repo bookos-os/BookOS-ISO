@@ -26,7 +26,7 @@ for app in "${apps[@]}"; do
     tar -C "/sources/$app" --exclude=target --exclude=node_modules --exclude=.git \
         --exclude=dist -cf - . | tar -C "/work/sources/$app" -xf -
 done
-python3 "$PROJECT/iso/app-catalog.py" prepare /work/sources
+python3 "$PROJECT/iso/app-catalog.py" prepare /work/sources "${apps[@]}"
 if [ "$#" -eq 0 ]; then rm -rf /work/repo; fi
 mkdir -p /work/repo
 for app in "${apps[@]}"; do
@@ -37,7 +37,14 @@ for app in "${apps[@]}"; do
     rm -rf "$CARGO_TARGET_DIR/release/bundle/rpm"
     /work/cli/node_modules/.bin/tauri build --bundles rpm 2>&1 | tee "/work/logs/$app.log"
     for artifact in "$CARGO_TARGET_DIR"/release/bundle/rpm/*.rpm; do
+        package=$(command rpm -qp --qf '%{NAME}' "$artifact")
         name=$(command rpm -qp --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' "$artifact")
+        # En una construcción parcial el repo conserva el resto; si esta app
+        # sube de versión, su RPM anterior no puede quedarse al lado del nuevo.
+        for old in /work/repo/*.rpm; do
+            [ -e "$old" ] || continue
+            [ "$(command rpm -qp --qf '%{NAME}' "$old")" = "$package" ] && rm -f -- "$old"
+        done
         cp "$artifact" "/work/repo/$name.rpm"
     done
 done

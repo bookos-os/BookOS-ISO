@@ -26,9 +26,14 @@ def sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def prepare(root):
-    """Only modifies isolated build copies, preserving each app's bundle files."""
+def prepare(root, folders=()):
+    """Only modifies isolated build copies, preserving each app's bundle files.
+
+    Con `folders`, solo esas: en una construcción parcial desde cero las demás
+    no se han copiado y no hay nada que preparar."""
     for folder, package, spanish, english in APPS:
+        if folders and folder not in folders:
+            continue
         tauri = root / folder / 'src-tauri'
         config_path = tauri / 'tauri.conf.json'
         config = json.loads(config_path.read_text())
@@ -139,12 +144,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['prepare', 'record', 'verify', 'pin', 'list'])
     parser.add_argument('directory', type=Path, nargs='?')
-    parser.add_argument('kickstart', type=Path, nargs='?')
+    parser.add_argument('extra', nargs='*', help='kickstart para pin; carpetas para prepare')
     args = parser.parse_args()
     if args.command == 'list':
         for app in APPS:
             print(app[0])
     elif args.command == 'pin':
-        pin(args.directory, args.kickstart)
+        pin(args.directory, Path(args.extra[0]))
+    elif args.command == 'prepare':
+        prepare(args.directory, args.extra)
     else:
         globals()[args.command](args.directory)

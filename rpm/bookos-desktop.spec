@@ -1,6 +1,6 @@
 Name:           bookos-desktop
 Version:        0.1.0
-Release:        6%{?dist}
+Release:        7%{?dist}
 Summary:        BookOS Rust Wayland compositor and desktop session
 License:        GPL-3.0-or-later
 URL:            https://github.com/bookos/bookos-desktop
@@ -45,9 +45,11 @@ install -Dm755 target/release/bookos-comp %{buildroot}%{_libexecdir}/bookos-comp
 install -Dm755 target/release/bookos-system %{buildroot}%{_libexecdir}/bookos-system
 install -Dm755 session/bookos-session %{buildroot}%{_bindir}/bookos-session
 install -Dm644 session/bookos-recovery.py %{buildroot}%{_libexecdir}/bookos-recovery.py
+install -Dm644 session/bookos.pam %{buildroot}%{_sysconfdir}/pam.d/bookos
 install -Dm644 session/bookos-fingerprint.pam %{buildroot}%{_sysconfdir}/pam.d/bookos-fingerprint
 install -Dm644 session/bookos.desktop %{buildroot}%{_datadir}/wayland-sessions/bookos.desktop
 install -Dm644 session/bookos-system.service %{buildroot}%{_prefix}/lib/systemd/user/bookos-system.service
+install -Dm644 session/bookos-session.target %{buildroot}%{_prefix}/lib/systemd/user/bookos-session.target
 # Activación por D-Bus: sin este fichero, quien llame a org.bookos.System1
 # antes de que la sesión arranque la unidad se queda sin servicio.
 install -Dm644 session/org.bookos.System1.service %{buildroot}%{_datadir}/dbus-1/services/org.bookos.System1.service
@@ -55,6 +57,7 @@ install -Dm644 session/bookos.portal %{buildroot}%{_datadir}/xdg-desktop-portal/
 install -Dm644 session/bookos-portals.conf %{buildroot}%{_datadir}/xdg-desktop-portal/BookOS-portals.conf
 
 %files
+%config(noreplace) %{_sysconfdir}/pam.d/bookos
 %config(noreplace) %{_sysconfdir}/pam.d/bookos-fingerprint
 %{_libexecdir}/bookos-comp
 %{_libexecdir}/bookos-system
@@ -62,11 +65,21 @@ install -Dm644 session/bookos-portals.conf %{buildroot}%{_datadir}/xdg-desktop-p
 %{_libexecdir}/bookos-recovery.py
 %{_datadir}/wayland-sessions/bookos.desktop
 %{_prefix}/lib/systemd/user/bookos-system.service
+%{_prefix}/lib/systemd/user/bookos-session.target
 %{_datadir}/dbus-1/services/org.bookos.System1.service
 %{_datadir}/xdg-desktop-portal/portals/bookos.portal
 %{_datadir}/xdg-desktop-portal/BookOS-portals.conf
 
 %changelog
+* Wed Sep 23 2026 BookOS <packages@bookos.es> - 0.1.0-7
+- Se empaqueta /etc/pam.d/bookos: el bloqueo autentica con ese servicio y,
+  sin él, PAM caía a «other» y denegaba siempre la contraseña.
+- Se empaqueta bookos-session.target: sin él no se activa
+  graphical-session.target y xdg-desktop-portal no llega a arrancar.
+- Los lanzadores de data/applications siguen fuera: los de las aplicaciones
+  chocarían con los que instala cada RPM, y bookos-captura y bookos-share no
+  los proporciona ningún paquete.
+
 * Wed Sep 16 2026 BookOS <packages@bookos.es> - 0.1.0-6
 - Confirmaciones de energía, dock configurable en vivo y actualización de widgets.
 - Servicio biométrico PAM independiente; la contraseña sigue disponible.
