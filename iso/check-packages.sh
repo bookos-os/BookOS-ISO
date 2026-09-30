@@ -24,9 +24,35 @@ tar --transform "s,^\.,$desktop," -czf "$RPM_TOPDIR/SOURCES/$desktop.tar.gz" \
     -C /sources/bookos-desktop .
 cp "$project/rpm/RPM-GPG-KEY-bookos" "$project/rpm/bookos.repo" "$RPM_TOPDIR/SOURCES/"
 python3 "$project/iso/collect-visuals.py" /sources "$RPM_TOPDIR/SOURCES"
-for package in bookos-branding bookos-desktop-integration bookos-desktop bookos-meta bookos-keyring bookos-icons bookos-widgets; do
-    rpmbuild --define "_topdir $RPM_TOPDIR" -bb "$project/rpm/$package.spec"
+# Temas, huella, audio y asistente: antes se tomaban ya construidos del
+# servidor. Desde que se vació (2026-09-24) todo sale de aquí, del código, para
+# que la ISO se pueda rehacer desde cero y lo probado sea lo que se publica.
+bash "$project/rpm/collect-themes.sh" "$(spec_version bookos-plasma-theme)"
+bash "$project/rpm/collect-galaxybook-fixes.sh" "$(spec_version bookos-galaxybook-audio)"
+libfprint="libfprint-bookos-$(spec_version libfprint-bookos)"
+tar --exclude='./build' --exclude='./.git' --transform "s,^\.,$libfprint," \
+    -czf "$RPM_TOPDIR/SOURCES/$libfprint.tar.gz" -C /sources/libfprint-fmv-etu906axx-e-fix4Book5Pro .
+welcome_spec=/sources/BookOS-Welcome/data/bookos-welcome.spec
+welcome="bookos-welcome-$(awk '/^Version:/ {print $2; exit}' "$welcome_spec")"
+tar --exclude='./build' --exclude='./.git' --transform "s,^\.,$welcome," \
+    -czf "$RPM_TOPDIR/SOURCES/$welcome.tar.gz" -C /sources/BookOS-Welcome .
+specs=()
+for package in bookos-branding bookos-desktop-integration bookos-desktop bookos-meta bookos-keyring bookos-icons \
+               bookos-plasma-theme bookos-gtk-theme bookos-galaxybook-audio libfprint-bookos; do
+    specs+=("$project/rpm/$package.spec")
 done
+# Welcome enlaza Qt con versión de símbolo (Qt_6.11…). Se compila contra el Qt
+# del repo base: el compose de la ISO resolvió con Qt 6.10 aunque este
+# contenedor tenía 6.11 de updates, y abortó con «nada proporciona
+# libQt6Core.so.6(Qt_6.11)» (2026-09-25). Contra 6.10 funciona en ambos casos.
+dnf -y builddep --repo=fedora "$welcome_spec"
+dnf -y builddep "${specs[@]}"
+specs+=("$welcome_spec")
+for spec in "${specs[@]}"; do
+    rpmbuild --define "_topdir $RPM_TOPDIR" -bb "$spec"
+done
+# Los debuginfo no van a la ISO ni al repo publicado.
+find "$RPM_TOPDIR/RPMS" -name '*-debug*.rpm' -delete
 cp "$RPM_TOPDIR"/RPMS/*/*.rpm /work/repo/
 python3 "$project/iso/app-catalog.py" verify /work/repo
 createrepo_c /work/repo

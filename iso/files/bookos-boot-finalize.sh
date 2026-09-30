@@ -21,7 +21,11 @@ set_kv GRUB_DISTRIBUTOR '"BookOS"'
 set_kv GRUB_ENABLE_BLSCFG true
 set_kv GRUB_DISABLE_OS_PROBER false
 set_kv GRUB_TERMINAL_OUTPUT '"gfxterm"'
-set_kv GRUB_GFXMODE auto
+# GRUB no escala tipografías ni iconos según la densidad. En paneles HiDPI,
+# `auto` elige la resolución nativa y deja el menú ilegiblemente pequeño. Se
+# priorizan modos cercanos a 1920 px y se conserva `auto` como salida segura
+# para firmware que solo exponga un modo GOP.
+set_kv GRUB_GFXMODE 1920x1200,1920x1080,1680x1050,1440x900,1280x800,1024x768,800x600,auto
 set_kv GRUB_GFXPAYLOAD_LINUX keep
 if [ -f /boot/grub2/themes/bookos/theme.txt ]; then
     set_kv GRUB_THEME '"/boot/grub2/themes/bookos/theme.txt"'

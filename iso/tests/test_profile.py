@@ -18,9 +18,8 @@ class ProfileTests(unittest.TestCase):
         function = re.search(r'^select_live_session\(\) \{.*?^\}', raw, re.M | re.S).group()
         for files, expected in (
             (["wayland-sessions/bookos.desktop", "wayland-sessions/plasma.desktop"], "bookos.desktop"),
-            (["wayland-sessions/plasma.desktop"], "plasma.desktop"),
-            (["xsessions/plasmax11.desktop"], "plasmax11.desktop"),
-            (["wayland-sessions/plasma.desktop", "xsessions/plasmax11.desktop"], "plasma.desktop"),
+            # Plasma ya no es respaldo: sin bookos.desktop el compose falla.
+            (["wayland-sessions/plasma.desktop"], None),
             ([], None),
         ):
             with self.subTest(files=files), tempfile.TemporaryDirectory() as tmp:
@@ -34,7 +33,7 @@ class ProfileTests(unittest.TestCase):
                 )
                 if expected is None:
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("no supported graphical session", result.stderr)
+                    self.assertIn("wayland-sessions/bookos.desktop (bookos-desktop)", result.stderr)
                 else:
                     self.assertEqual(result.returncode, 0)
                     self.assertEqual(result.stdout.strip(), expected)

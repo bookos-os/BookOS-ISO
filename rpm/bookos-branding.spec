@@ -1,6 +1,6 @@
 Name:           bookos-branding
 Version:        0.6.2
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        BookOS branding (logos, wallpapers, SDDM/Plymouth themes)
 License:        GPL-3.0
 URL:            https://bookos.es/
@@ -506,6 +506,9 @@ true
 /usr/libexec/bookos-apply-identity 2>/dev/null || true
 
 %changelog
+* Mon Sep 28 2026 BookOS <packages@bookos.es> - 0.6.2-4
+- Icono nuevo para «Instalar en el disco duro» (bookos-install.svg).
+
 * Mon Sep 14 2026 BookOS <packages@bookos.es> - 0.6.2-3
 - Splash de arranque nuevo: logo y barra fina; en actualizaciones, una línea
   con el progreso; al apagar, solo el logo. Se adapta a cualquier resolución.

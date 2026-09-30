@@ -13,8 +13,12 @@ case "$kind" in
         [ -s "$key" ] || { echo "Missing RPM public key: $key" >&2; exit 1; }
         task_tmp=$(mktemp -d)
         trap 'rm -rf -- "$task_tmp"' EXIT
-        rpm --dbpath "$task_tmp/rpmdb" --initdb
-        rpm --dbpath "$task_tmp/rpmdb" --import "$key"
+        # rpmkeys y no `rpm --initdb`: /usr/bin/rpm corre en el dominio SELinux
+        # rpm_t, que no puede escribir en $HOME ni en /tmp del usuario (medido
+        # en Fedora 44: «no puede crear el bloqueo transacción … Permiso
+        # denegado»). rpmkeys es bin_t y crea la base al importar.
+        mkdir "$task_tmp/rpmdb"
+        rpmkeys --dbpath "$task_tmp/rpmdb" --import "$key"
         for artifact in "$@"; do
             [ -s "$artifact" ] || { echo "Missing RPM: $artifact" >&2; exit 1; }
             if ! report=$(LC_ALL=C rpmkeys --dbpath "$task_tmp/rpmdb" --checksig --verbose "$artifact" 2>&1); then

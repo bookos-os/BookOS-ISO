@@ -16,7 +16,7 @@ REF="${FIXES_REF:-main}"
 REPO="https://github.com/Andycodeman/samsung-galaxy-book-linux-fixes"
 
 USER_HOME="${SUDO_USER:+/home/$SUDO_USER}"; USER_HOME="${USER_HOME:-$HOME}"
-SOURCES="$USER_HOME/rpmbuild/SOURCES"
+SOURCES="${RPM_TOPDIR:-$USER_HOME/rpmbuild}/SOURCES"
 mkdir -p "$SOURCES"
 
 TMP="$(mktemp -d)"

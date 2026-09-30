@@ -10,8 +10,6 @@ podman run --rm --name bookos-visual-check --security-opt label=disable \
         set -e
         dnf -y install rpm-build gettext unzip pykickstart
         python3 /sources/BookOS-ISO/iso/collect-visuals.py /sources /work/rpmbuild/SOURCES
-        for package in bookos-icons bookos-widgets; do
-            rpmbuild --define "_topdir /work/rpmbuild" -bb /sources/BookOS-ISO/rpm/$package.spec
-        done
+        rpmbuild --define "_topdir /work/rpmbuild" -bb /sources/BookOS-ISO/rpm/bookos-icons.spec
         python3 -m unittest discover -s /sources/BookOS-ISO/iso/tests -v
     '

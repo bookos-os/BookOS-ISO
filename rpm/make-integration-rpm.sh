@@ -4,7 +4,7 @@
 #   bash make-integration-rpm.sh [version]
 #
 # Default version=0.6.1 (must match Version: in bookos-desktop-integration.spec).
-# Source tree: rpm/bookos-desktop-integration/  (bin/ servicemenus/ krunner-dbusplugins/ dbus-services/)
+# Source tree: rpm/bookos-desktop-integration/  (bin/ servicemenus/ applications/ xdg/ environment/ cleanup/)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

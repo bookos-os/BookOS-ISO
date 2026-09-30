@@ -1,6 +1,6 @@
 Name:           bookos-desktop
 Version:        0.1.0
-Release:        7%{?dist}
+Release:        9%{?dist}
 Summary:        BookOS Rust Wayland compositor and desktop session
 License:        GPL-3.0-or-later
 URL:            https://github.com/bookos/bookos-desktop
@@ -55,6 +55,7 @@ install -Dm644 session/bookos-session.target %{buildroot}%{_prefix}/lib/systemd/
 install -Dm644 session/org.bookos.System1.service %{buildroot}%{_datadir}/dbus-1/services/org.bookos.System1.service
 install -Dm644 session/bookos.portal %{buildroot}%{_datadir}/xdg-desktop-portal/portals/bookos.portal
 install -Dm644 session/bookos-portals.conf %{buildroot}%{_datadir}/xdg-desktop-portal/BookOS-portals.conf
+install -Dm644 session/70-bookos-camara.rules %{buildroot}%{_prefix}/lib/udev/rules.d/70-bookos-camara.rules
 
 %files
 %config(noreplace) %{_sysconfdir}/pam.d/bookos
@@ -69,8 +70,17 @@ install -Dm644 session/bookos-portals.conf %{buildroot}%{_datadir}/xdg-desktop-p
 %{_datadir}/dbus-1/services/org.bookos.System1.service
 %{_datadir}/xdg-desktop-portal/portals/bookos.portal
 %{_datadir}/xdg-desktop-portal/BookOS-portals.conf
+%{_prefix}/lib/udev/rules.d/70-bookos-camara.rules
 
 %changelog
+* Tue Sep 29 2026 BookOS <packages@bookos.es> - 0.1.0-9
+- Aviso en pantalla al bloquear o desbloquear la cámara del Galaxy Book: una
+  regla de udev deja al usuario de la sesión leer el interruptor de su tapa.
+
+* Fri Sep 25 2026 BookOS <packages@bookos.es> - 0.1.0-8
+- bookos-system monta solo lo extraíble (USB, discos externos, SD) a través
+  de udisks2, que en Plasma hacía kded y en la sesión BookOS no hacía nadie.
+
 * Wed Sep 23 2026 BookOS <packages@bookos.es> - 0.1.0-7
 - Se empaqueta /etc/pam.d/bookos: el bloqueo autentica con ese servicio y,
   sin él, PAM caía a «other» y denegaba siempre la contraseña.

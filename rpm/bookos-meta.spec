@@ -1,6 +1,6 @@
 Name:           bookos-meta
 Version:        0.6.1
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        BookOS umbrella package — pulls the full BookOS stack
 License:        GPL-3.0
 URL:            https://bookos.es/
@@ -10,17 +10,11 @@ BuildArch:      noarch
 # A version bump forces every visual piece to the SAME version atomically,
 # so upgrading 0.5 → 0.6 brings the whole redesign in one dnf transaction.
 Requires:       bookos-branding      >= 0.6.1-11
-Requires:       bookos-widgets       = %{version}
 Requires:       bookos-icons         = %{version}
 Requires:       bookos-icons         >= 0.6.1-2
-Requires:       bookos-widgets       >= 0.6.1-8
 Requires:       bookos-plasma-theme  = %{version}
 Requires:       bookos-gtk-theme     = %{version}
-Requires:       bookos-look-and-feel = %{version}
-# Full appearance bundle (global theme, icons, cursor, fonts, GTK + /etc/skel
-# applied config) — without this the desktop falls back to plain Breeze.
-Requires:       bookos-desktop-defaults = %{version}
-# Integración de escritorio (ServiceMenus terminal/color + runners KRunner).
+# Integración de escritorio (ServiceMenus de Dolphin, livestate).
 Requires:       bookos-desktop-integration >= 0.6.1-8
 Requires:       bookos-desktop >= 0.1.0
 # (sddm + wallpapers se entregan dentro de bookos-branding)
@@ -39,8 +33,11 @@ Requires:       bookos-new        >= 0.6.2
 Requires:       bookos-explorer   >= 0.6.2
 Requires:       bookos-welcome
 Requires:       bookos-keyring
-# KDE base
-Requires:       plasma-workspace
+# Plasma ya no forma parte de BookOS: el escritorio es bookos-desktop. Los
+# paquetes que solo configuraban Plasma se retiran en las actualizaciones.
+Obsoletes:      bookos-widgets < 0.6.2
+Obsoletes:      bookos-look-and-feel < 0.6.2
+Obsoletes:      bookos-desktop-defaults < 0.6.2
 Requires:       sddm
 Requires:       dolphin
 Requires:       firefox
@@ -56,6 +53,10 @@ This RPM contains no files — it only defines Requires.
 # (empty)
 
 %changelog
+* Thu Sep 24 2026 BookOS <josrebe333@gmail.com> - 0.6.1-5
+- Fuera Plasma: sin plasma-workspace, bookos-widgets, bookos-look-and-feel
+  ni bookos-desktop-defaults; los tres últimos se marcan como obsoletos.
+
 * %(LC_ALL=C date "+%a %b %d %Y") BookOS <packages@bookos.es> - 0.6.1-2
 - Rebuild from current spec: drop bogus bookos-clock>=1.0.0 / bookos-libfprint
   deps (stale rpm) that made 0.6.1-1 uninstallable and blocked widget upgrades.

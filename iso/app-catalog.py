@@ -122,6 +122,25 @@ def verify(repo):
     return entries
 
 
+def resign(repo):
+    """Acepta el sha256 nuevo de los RPM que se han firmado tras el build.
+
+    Firmar reescribe la cabecera y cambia el sha256, así que verify() los daría
+    por manipulados. Solo se acepta el hash nuevo si el RPM verifica con la
+    clave de BookOS: lo que haya cambiado lo firmó quien tiene la privada.
+    """
+    entries = json.loads((repo / 'bookos-apps.json').read_text())
+    check = Path(__file__).with_name('check-artifacts.sh')
+    for entry in entries:
+        rpm = repo / entry['file']
+        if sha256(rpm) == entry['sha256']:
+            continue
+        subprocess.run(['bash', str(check), 'rpm', str(rpm)], check=True, stdout=subprocess.DEVNULL)
+        entry['sha256'] = sha256(rpm)
+    (repo / 'bookos-apps.json').write_text(json.dumps(entries, indent=2) + '\n')
+    verify(repo)
+
+
 def pin(repo, kickstart):
     entries = verify(repo)
     names = ','.join(e['name'] for e in entries)
@@ -142,7 +161,7 @@ def pin(repo, kickstart):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['prepare', 'record', 'verify', 'pin', 'list'])
+    parser.add_argument('command', choices=['prepare', 'record', 'verify', 'resign', 'pin', 'list'])
     parser.add_argument('directory', type=Path, nargs='?')
     parser.add_argument('extra', nargs='*', help='kickstart para pin; carpetas para prepare')
     args = parser.parse_args()

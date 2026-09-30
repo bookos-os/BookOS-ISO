@@ -39,11 +39,19 @@ mkdir -p "$WORK"
 mkdir -p "$WORK/tmp"
 mkdir -p "$OUTDIR"
 
+# /sys/fs/selinux en SOLO LECTURA: --privileged lo deja escribible y el
+# scriptlet de selinux-policy-targeted del destino hace load_policy, que carga
+# la política de la ISO en el kernel del ANFITRIÓN. Pasó el 2026-09-10 y el
+# 2026-09-25 (MAC_POLICY_LOAD en el journal, miles de denegaciones unlabeled_t;
+# solo se arregla reiniciando). En solo lectura rpm sigue viendo SELinux
+# activo y etiqueta los ficheros de la ISO; lo único que falla es ese
+# load_policy, que en un chroot no hace falta.
 # ── Modo SERVIDOR: sin repo local ──────────────────────────────────────────
 if [ -n "${NO_LOCAL_REPO:-}" ]; then
     echo ":: modo SERVIDOR — la ISO tirará del repo publicado del canal '$CHANNEL'"
     exec podman run --rm --privileged --network=host --security-opt label=disable \
         -v /dev:/dev \
+        -v /sys/fs/selinux:/sys/fs/selinux:ro \
         -v "$ROOT":/build \
         -v "$OUTDIR":/out \
         -v "$WORK":/work \
@@ -72,6 +80,7 @@ echo ":: modo LOCAL — usando RPMs de $LOCALREPO (sin publicar)"
 
 exec podman run --rm --privileged --network=host --security-opt label=disable \
         -v /dev:/dev \
+        -v /sys/fs/selinux:/sys/fs/selinux:ro \
     -v "$ROOT":/build \
     -v "$OUTDIR":/out \
     -v "$LOCALREPO":/localrepo \

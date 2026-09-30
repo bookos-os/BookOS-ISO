@@ -95,6 +95,12 @@ if [ -n "${BOOKOS_LOCAL_REPO:-}" ]; then
     python3 "$SCRIPT_DIR/app-catalog.py" pin "$BOOKOS_LOCAL_REPO" "$WORKDIR/bookos-flat.ks"
     echo "[i] Repo bookos LOCAL: file://$BOOKOS_LOCAL_REPO"
     sed -i -E "s#(repo --name=bookos )--baseurl=[^ ]+#\1--baseurl=file://$BOOKOS_LOCAL_REPO#" "$WORKDIR/bookos-flat.ks"
+    # En modo LOCAL el repo local trae TODO lo de BookOS. El de apps del
+    # servidor sobra, y si el servidor no tiene repo (vaciado el 2026-09-24,
+    # 404) anaconda aborta entera con «Error al configurar los repositorios».
+    # Contrapartida: las apps opcionales (ALLAPPS=S) tienen que estar también
+    # en el repo local.
+    sed -i '/^repo --name=bookos-apps /d' "$WORKDIR/bookos-flat.ks"
 fi
 
 # ── Plantillas de lorax parcheadas ─────────────────────────────────────────

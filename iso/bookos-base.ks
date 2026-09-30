@@ -1,5 +1,5 @@
 # BookOS — kickstart base (shared by stable/beta/dev)
-# Builds live ISO that includes BookOS branding + bookos-meta + KDE Plasma.
+# Builds live ISO that includes BookOS branding + bookos-meta + bookos-desktop.
 
 # Primary locale = Spanish (BookOS target market): the live session AND the
 # Anaconda installer boot in Spanish. --addsupport keeps extra locales
@@ -31,7 +31,7 @@ rootpw --lock
 
 # Live user is created at the END of %post (not here) so it is added AFTER the
 # RPMs have populated /etc/skel — useradd -m then copies the FULL BookOS config
-# (panel layout, widgets, theme, lockscreen toggle) into its home. Creating it
+# (theme, autostart, launchers) into its home. Creating it
 # here (the old `user` directive) ran before skel existed, which is why every
 # skel write needed a manual /home/liveuser copy and why widgets/theme kept
 # going missing. See the "Live user" block at the bottom of %post.
@@ -58,18 +58,15 @@ repo --name=bookos-apps --baseurl=https://bookos.es/store-files/
 %packages --exclude-weakdeps
 @core
 @hardware-support
-# Plasma Wayland, with explicit desktop services instead of the full KDE spin.
+# Escritorio propio (bookos-desktop). Plasma ya no va en la imagen: el panel,
+# dock, launchpad, bloqueo, red, sonido y Bluetooth los pinta bookos-desktop.
+# kwin se queda solo para bookos-recovery.py, que lo usa de compositor de
+# emergencia si bookos-comp no arranca. polkit-kde es el agente de polkit: el
+# escritorio no trae uno y sin él pkexec (BookOS Settings) no puede pedir clave.
 bookos-desktop
-plasma-desktop
 kwin
-kscreen
-kscreenlocker
-plasma-nm
-plasma-pa
 polkit-kde
-powerdevil
 power-profiles-daemon
-bluedevil
 bluez
 NetworkManager
 NetworkManager-wifi
@@ -82,7 +79,6 @@ alsa-utils
 mesa-dri-drivers
 mesa-vulkan-drivers
 xorg-x11-server-Xwayland
-xdg-desktop-portal-kde
 xdg-desktop-portal-gtk
 xdg-utils
 udisks2
@@ -92,9 +88,6 @@ gnome-keyring
 orca
 at-spi2-core
 qt6-qtwayland
-kde-gtk-config
-aurorae
-plasma-breeze
 google-noto-sans-fonts
 google-noto-emoji-color-fonts
 chrony
@@ -181,7 +174,6 @@ bookos-meta
 bookos-welcome
 # Missing applications fail dependency resolution. The final post section
 # also validates the resulting rootfs and desktop integration.
-bookos-widgets
 bookos-settings
 bookos-store
 bookos-calc
@@ -192,14 +184,11 @@ bookos-player
 bookos-new
 bookos-explorer
 bookos-branding
-bookos-look-and-feel
-bookos-desktop-defaults
-# Temas e iconos: sin estos la LNF BookOS referencia temas inexistentes y el
-# escritorio cae a Breeze (parte del bug "0.6 sale sin el look BookOS").
+# Iconos, colores/Kvantum de las apps Qt y tema GTK.
 bookos-icons
 bookos-plasma-theme
 bookos-gtk-theme
-# ServiceMenus (terminal / color de carpeta) + runners KRunner (acciones, clima).
+# ServiceMenus de Dolphin (terminal / color de carpeta) y bookos-livestate.
 bookos-desktop-integration
 # Optional apps — substituted by build-iso.sh when "all apps" is requested.
 __BOOKOS_OPTIONAL_APPS__
@@ -217,9 +206,9 @@ kernel-devel
 akmods
 alsa-sof-firmware
 
-# KDE essentials
+# Login y apps KDE que se conservan. Sin plasma-workspace: medido en
+# fedora:44, sddm y dolphin no lo arrastran.
 sddm
-plasma-workspace
 dolphin
 firefox
 kde-partitionmanager
@@ -422,7 +411,7 @@ mkdir -p /etc/yum.repos.d
 # cada baseurl su ruta; los nombres de sección y el conmutador de
 # BookOS Settings (set_update_channel) siguen siendo válidos.
 cat > /etc/yum.repos.d/bookos-os.repo <<EOF
-# BookOS system channels — bookos-meta + branding/widgets/themes (OS updates)
+# BookOS system channels — bookos-meta + branding/themes (OS updates)
 [bookos-stable]
 name=BookOS (stable)
 baseurl=https://bookos.es/store-files/
@@ -454,27 +443,22 @@ metadata_expire=6h
 skip_if_unavailable=True
 EOF
 
-# Store apps repo (bookos-store / dnf install bookos-*)
-cat > /etc/yum.repos.d/bookos.repo <<EOF
-[bookos]
-name=BookOS Apps
-baseurl=https://bookos.es/store-files/
-enabled=1
-gpgcheck=1
-repo_gpgcheck=0
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-bookos
-metadata_expire=300
-skip_if_unavailable=True
-EOF
-# gpgcheck verifica la firma de cada paquete; repo_gpgcheck la de los metadatos.
-# Hacen falta los dos: firmar solo el índice y activar gpgcheck deja a dnf
-# buscando firmas en RPMs que no las tienen, y falla toda instalación.
+# El repo de apps (/etc/yum.repos.d/bookos.repo) lo instala bookos-keyring; no
+# se reescribe aquí. Antes se sobrescribía con un heredoc idéntico: dos fuentes
+# de verdad para el mismo fichero y `rpm -V bookos-keyring` lo daba por
+# modificado.
+#
+# gpgcheck=1 verifica la firma de cada paquete. repo_gpgcheck=0 a propósito:
+# probado con dnf5 5.4.5 (Fedora 44) en contenedor, con repo_gpgcheck=1 dnf
+# pregunta "Importing OpenPGP key… Is this ok [y/N]" aunque la clave ya esté en
+# la base de rpm, porque guarda la de metadatos en /var/cache/libdnf5/<repo>/
+# pubring, y vuelve a preguntar si esa caché se borra o cambia la baseurl.
+# Con repo_gpgcheck=0 y la clave importada abajo, no pregunta nada.
 #
 # gpgkey apunta a un fichero LOCAL que instala bookos-keyring, no a una URL:
 # descargar la clave del mismo servidor que sirve los paquetes es circular —
 # quien controlase ese servidor serviría su clave junto a sus paquetes y todo
 # verificaría. Al venir en la ISO, la confianza se establece una sola vez.
-# Efecto secundario buscado: las actualizaciones no preguntan nada.
 #
 # Publicar SIEMPRE con Bookos-web/deploy/sign-and-publish.sh, que firma fuera
 # del servidor. Un paquete subido sin firmar deja de instalarse.
@@ -548,12 +532,8 @@ EOF
 select_live_session() {
     if [ -f /usr/share/wayland-sessions/bookos.desktop ]; then
         printf '%s\n' bookos.desktop
-    elif [ -f /usr/share/wayland-sessions/plasma.desktop ]; then
-        printf '%s\n' plasma.desktop
-    elif [ -f /usr/share/xsessions/plasmax11.desktop ]; then
-        printf '%s\n' plasmax11.desktop
     else
-        echo 'ERROR: no supported graphical session installed' >&2
+        echo 'ERROR: falta /usr/share/wayland-sessions/bookos.desktop (bookos-desktop)' >&2
         return 1
     fi
 }
@@ -565,22 +545,6 @@ User=liveuser
 Session=${LIVE_SESSION%.desktop}
 Relogin=false
 EOF
-
-# ── BookOS lockscreen ───────────────────────────────────────────────────
-# Replicates bookos-settings' install_lockscreen_theme: overwrite the Plasma
-# shell lockscreen with the staged BookOS QML so the live session AND fresh
-# installs show the BookOS lockscreen out of the box (instead of plain Breeze),
-# without the user having to flip the toggle in BookOS Settings.
-LS_SRC=/usr/share/bookos-settings/lockscreen
-LS_DEST=/usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen
-if [ -d "$LS_SRC" ] && [ -d "$LS_DEST" ]; then
-    mkdir -p "$LS_DEST/.backup"
-    for f in MainBlock.qml LockScreenUi.qml BookBar.qml MediaControls.qml; do
-        [ -f "$LS_DEST/$f" ] && cp -f "$LS_DEST/$f" "$LS_DEST/.backup/$f" 2>/dev/null || true
-        [ -f "$LS_SRC/$f" ]  && cp -f "$LS_SRC/$f"  "$LS_DEST/$f"        2>/dev/null || true
-    done
-    touch "$LS_DEST/.bookos-installed"
-fi
 
 # ── Installer launcher on the live desktop ──────────────────────────────
 # Without livesys-scripts nothing places the "Install to Hard Drive" icon on
@@ -618,13 +582,6 @@ if [ "$CUR" -ge "$MAX" ]; then NEXT=0; else NEXT=$((CUR + 1)); fi
 echo "$NEXT" > "$LED/brightness"
 SH
 chmod +x /usr/libexec/bookos-kbd-backlight
-# Compat: the Control Station widget calls `bash ~/.toggle-luz.sh`.
-cat > /etc/skel/.toggle-luz.sh <<'SH'
-#!/bin/sh
-exec /usr/libexec/bookos-kbd-backlight
-SH
-chmod +x /etc/skel/.toggle-luz.sh
-
 # udev: make the kbd backlight node writable without root. `uaccess` grants the
 # user of the active graphical session a write ACL (covers the installer-created
 # user regardless of group); the chgrp/chmod to `video` is a fallback for the
@@ -636,59 +593,12 @@ ACTION=="add|change", SUBSYSTEM=="leds", KERNEL=="*kbd_backlight", \
   RUN+="/bin/chmod g+w /sys/class/leds/%k/brightness"
 EOF
 
-# Bind Fn+F9 to the cycler for new users. Fn+F9 emits KEY_KBDILLUMTOGGLE,
-# which reaches Qt as "Keyboard Light On/Off". Two things are needed:
-#  1) unbind powerdevil's own "Toggle Keyboard Backlight" (a plain on/off) —
-#     it claims the key first and kglobalaccel refuses duplicate bindings,
-#     which is why the cycler never fired;
-#  2) register the launcher under [services] (the group kglobalaccel actually
-#     reads for .desktop command shortcuts; _launch there is a single field).
-mkdir -p /etc/skel/.config
-cat >> /etc/skel/.config/kglobalshortcutsrc <<'EOF'
-
-[org_kde_powerdevil]
-Toggle Keyboard Backlight=none,Keyboard Light On/Off,Toggle Keyboard Backlight
-
-[services][bookos-kbd-backlight.desktop]
-_launch=Keyboard Light On/Off
-
-[services][bookos-terminal.desktop]
-_launch=Ctrl+Alt+T
-
-[services][org.kde.konsole.desktop]
-_launch=none
-
-[services][bookos-settings.desktop]
-_launch=Meta+I
-
-[services][systemsettings.desktop]
-_launch=none
-
-# Alt+Tab = switcher BookOS (iconos) · Meta+Tab = previsualizaciones
-# (por defecto ambos atajos disparan el mismo "Walk Through Windows")
-[kwin]
-Walk Through Windows=Alt+Tab,Alt+Tab\tMeta+Tab,Recorrer las ventanas
-Walk Through Windows (Reverse)=Alt+Shift+Tab,Alt+Shift+Tab\tMeta+Shift+Tab,Recorrer las ventanas (hacia atrás)
-Walk Through Windows Alternative=Meta+Tab,none,Recorrer las ventanas de modo alternativo
-Walk Through Windows Alternative (Reverse)=Meta+Shift+Tab,none,Recorrer las ventanas de modo alternativo (hacia atrás)
-EOF
-
 # Terminal por defecto (Dolphin "Abrir terminal", kioclient exec…):
 # el wrapper prefiere bookos-shell y cae a konsole si no está.
 mkdir -p /etc/skel/.config
 if ! grep -q "TerminalApplication" /etc/skel/.config/kdeglobals 2>/dev/null; then
     printf '\n[General]\nTerminalApplication=bookos-open-terminal.sh\nTerminalService=bookos-terminal.desktop\n' >> /etc/skel/.config/kdeglobals
 fi
-mkdir -p /etc/skel/.local/share/applications
-cat > /etc/skel/.local/share/applications/bookos-kbd-backlight.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Keyboard Backlight
-Exec=/usr/libexec/bookos-kbd-backlight
-NoDisplay=true
-X-KDE-GlobalAccel-CommandShortcut=true
-EOF
-
 # ── Plymouth (splash de arranque) ──────────────────────────────────────────
 # Plymouth NO lee el tema del disco al arrancar: lo lee de DENTRO del initramfs,
 # porque cuando corre todavía no hay raíz montada. Así que hacen falta dos cosas
@@ -929,30 +839,10 @@ for KVER in $(ls /lib/modules 2>/dev/null); do
 done
 systemctl enable dkms.service 2>/dev/null || true
 
-# ── Default wallpaper ───────────────────────────────────────────────────────
-# The captured layout may point at a developer path (file:///home/evelyn/...).
-# Repoint any such reference in the shipped layout to a packaged wallpaper so
-# the desktop isn't black on a fresh boot. Prefers blue_dark.png.
-WP=/usr/share/backgrounds/bookos/Light/blue.png
-[ -f "$WP" ] || WP="$(ls /usr/share/backgrounds/bookos/Light/*.png /usr/share/backgrounds/bookos/*.png 2>/dev/null | head -1)"
-if [ -n "$WP" ]; then
-    f=/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
-    [ -f "$f" ] && sed -i -E "s#file://[^,\"]*(fondo\.png|/home/[^,\"]*\.(png|jpg|jpeg))#file://$WP#g" "$f" 2>/dev/null || true
-fi
-
 # ── Idioma: forzar español de forma explícita ───────────────────────────────
 # La directiva `lang` de kickstart no siempre llega a la sesión live (livesys
 # puede pisar locale.conf) — se vio la ISO del 4-jul en inglés pese a lang es_ES.
 echo 'LANG=es_ES.UTF-8' > /etc/locale.conf
-mkdir -p /etc/skel/.config
-cat > /etc/skel/.config/plasma-localerc <<'EOF2'
-[Formats]
-LANG=es_ES.UTF-8
-
-[Translations]
-LANGUAGE=es:en_US
-EOF2
-
 # ── FIX arranque: dracut 108 + systemd 259 pierde systemd-sysroot-fstab-check ─
 # En systemd 259 /usr/lib/systemd/systemd-sysroot-fstab-check pasó a ser un
 # SYMLINK a system-generators/systemd-fstab-generator. dracut-install (dracut
@@ -986,89 +876,15 @@ systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
 mkdir -p /etc/systemd/journald.conf.d
 printf '[Journal]\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/bookos.conf
 
-# Solo wallpapers BookOS en el selector: borra los stock que queden (Next de
-# plasma-workspace, restos de Fedora). El default BookOS se aplica en first-login.
+# Solo wallpapers BookOS en el selector: borra los stock que queden (restos
+# de Fedora).
 for w in /usr/share/wallpapers/*; do
     case "$(basename "$w")" in BookOS-*) ;; *) rm -rf "$w";; esac
-done
-
-# Global themes: solo BookOS-Dark/BookOS-Light + los Breeze esenciales
-# (org.kde.breeze.desktop es el fallback de Plasma — NO quitarlo).
-for t in /usr/share/plasma/look-and-feel/*; do
-    case "$(basename "$t")" in
-        BookOS-*|org.kde.breeze.desktop|org.kde.breezedark.desktop) ;;
-        *) rm -rf "$t";;
-    esac
 done
 
 # Update icon cache after BookOS icons installed
 gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
 kbuildsycoca6 --noincremental 2>/dev/null || true
-
-# ── First-login applet-cache rebuild ────────────────────────────────────────
-# The %post kbuildsycoca6 above runs as ROOT, so it builds /root's cache — not
-# the live/installed user's. On a fresh boot plasmashell loads the shipped
-# panel layout (plasma-org.kde.plasma.desktop-appletsrc) before the user's
-# KPackage/sycoca index knows about the just-installed bookos-* plasmoids,
-# giving "Error loading Applet: package bookos-menu does not exist". Rebuild the
-# per-user cache on first login and restart plasmashell once, then self-delete.
-mkdir -p /etc/skel/.config/autostart /usr/libexec /etc/bookos
-# #6: default global look is a single editable file, NOT hardcoded in the script.
-# Branding/look packages (or an admin) can change it to "BookOS-Dark", etc.
-echo "BookOS-Light" > /etc/bookos/default-look
-cat > /usr/libexec/bookos-first-login-refresh <<'SH'
-#!/bin/sh
-STAMP="$HOME/.config/.bookos-applet-refresh-done"
-[ -f "$STAMP" ] && { rm -f "$HOME/.config/autostart/bookos-first-login-refresh.desktop"; exit 0; }
-kbuildsycoca6 --noincremental 2>/dev/null || true
-# Apply the BookOS global look-and-feel so Plasma cascades its colors/icons/
-# style/decoration (otherwise it falls back to Breeze). Theme name read from
-# /etc/bookos/default-look — no hardcoded name here.
-LOOK="$(cat /etc/bookos/default-look 2>/dev/null)"; [ -n "$LOOK" ] || LOOK="BookOS-Light"
-plasma-apply-lookandfeel -a "$LOOK" 2>/dev/null || true
-# Wallpaper isn't part of the LnF cascade; set it explicitly, Light/Dark aware.
-case "$LOOK" in *Dark*) WPDIR=Dark;; *) WPDIR=Light;; esac
-WP="/usr/share/backgrounds/bookos/$WPDIR/blue.png"
-[ -f "$WP" ] || WP="$(ls /usr/share/backgrounds/bookos/$WPDIR/*.png /usr/share/backgrounds/bookos/*.png 2>/dev/null | head -1)"
-[ -n "$WP" ] && plasma-apply-wallpaperimage "$WP" 2>/dev/null || true
-touch "$STAMP"
-# Restart plasmashell so it re-reads the applet list with the rebuilt cache.
-(sleep 2; kquitapp6 plasmashell 2>/dev/null; kstart plasmashell 2>/dev/null || plasmashell --replace 2>/dev/null &) >/dev/null 2>&1 &
-rm -f "$HOME/.config/autostart/bookos-first-login-refresh.desktop"
-SH
-chmod +x /usr/libexec/bookos-first-login-refresh
-cat > /etc/skel/.config/autostart/bookos-first-login-refresh.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=BookOS first-login refresh
-Exec=/usr/libexec/bookos-first-login-refresh
-X-KDE-autostart-phase=2
-NoDisplay=true
-EOF
-
-# ── No "package bookos-menu does not exist" on the panel ─────────────────────
-# Complements the autostart above: this user service rebuilds the KDE sycoca/
-# KPackage index BEFORE plasmashell paints (Plasma 6 boots the session via
-# systemd), so the first boot never flashes the broken-applet error. The
-# autostart then applies theme/wallpaper inside the session.
-mkdir -p /etc/skel/.config/systemd/user/plasma-workspace.target.wants
-cat > /etc/skel/.config/systemd/user/bookos-sycoca.service <<'UNIT'
-[Unit]
-Description=Rebuild KDE sycoca so BookOS plasmoids are known before the panel loads
-Before=plasma-plasmashell.service
-PartOf=graphical-session.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/kbuildsycoca6 --noincremental
-
-[Install]
-WantedBy=plasma-workspace.target
-UNIT
-ln -sf ../bookos-sycoca.service \
-    /etc/skel/.config/systemd/user/plasma-workspace.target.wants/bookos-sycoca.service
-# (No liveuser seeding: liveuser is created via useradd -m at the end of %post,
-#  which copies this finished /etc/skel.)
 
 # ── Theme the Anaconda WebUI installer (guaranteed: runs after every package
 # is installed, unlike the RPM %post which may run before anaconda-webui). ──
@@ -1115,7 +931,7 @@ systemctl enable sddm.service 2>/dev/null || true
 
 # ── Live user (created LAST, after /etc/skel is fully populated) ─────────────
 # Doing this here — not via the kickstart `user` directive — means useradd -m
-# copies the FINISHED /etc/skel (panel layout, widgets, theme, autostart, sycoca
+# copies the FINISHED /etc/skel (theme, autostart, launchers
 # service, lockscreen toggle) into the live home in one shot. No per-file
 # /home/liveuser copies, and nothing can be silently missed. Password cleared so
 # SDDM autologin (zz-live-autologin.conf above) drops straight to the desktop.
@@ -1139,8 +955,8 @@ dnf clean all
 # Verify the composed image as well as successful dependency resolution.
 %post --erroronfail
 set -euo pipefail
-for p in bookos-keyring bookos-meta bookos-branding bookos-widgets bookos-desktop bookos-look-and-feel bookos-shell \
-         bookos-desktop-defaults bookos-desktop-integration bookos-settings \
+for p in bookos-keyring bookos-meta bookos-branding bookos-desktop bookos-shell \
+         bookos-desktop-integration bookos-settings \
          bookos-store bookos-welcome bookos-player bookos-calc bookos-clock bookos-notepad \
          bookos-new bookos-explorer \
          firefox dolphin kde-partitionmanager grub2-pc grub2-tools grub2-efi-x64 shim-x64 efibootmgr; do
@@ -1153,8 +969,11 @@ done
 
 # Sin la clave importada, todo repo con gpgcheck=1 pediría confirmación en la
 # primera actualización — justo lo que se quiere evitar. Se comprueba que el
-# %post de bookos-keyring llegó a ejecutarse.
-rpm -q gpg-pubkey --qf '%{SUMMARY}\n' 2>/dev/null | grep -qi 'BookOS Release Signing' \
+# `rpm --import` del %post de este kickstart llegó a ejecutarse.
+# Por huella y no por nombre: la clave vieja B21B3821… tiene el mismo uid
+# «BookOS Release Signing» y con ella nada verifica. rpm 6 nombra la clave
+# con la huella completa (medido en fedora:44), no con los 8 hex cortos.
+rpm -q gpg-pubkey-f8d96833e35611130227335a9a8fa3b2e9e0e64f >/dev/null 2>&1 \
     || { echo "✗ la clave de firma de BookOS no está importada en la base de datos rpm"; exit 1; }
 
 # El PRETTY_NAME del sistema INSTALADO no lo escribe este kickstart sino
