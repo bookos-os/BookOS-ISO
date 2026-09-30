@@ -1,3 +1,0 @@
-[D-BUS Service]
-Name=org.bookos.LiveStates
-Exec=/usr/lib/bookos/bookos-livestates-broker.py

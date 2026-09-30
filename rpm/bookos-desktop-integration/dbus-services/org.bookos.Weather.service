@@ -1,3 +1,0 @@
-[D-BUS Service]
-Name=org.bookos.Weather
-Exec=/usr/bin/bookos-weather-runner.py
