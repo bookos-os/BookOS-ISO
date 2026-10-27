@@ -5,6 +5,7 @@
 # Misma lógica que el post-script de Anaconda del kickstart de la ISO — esta
 # copia viaja en el RPM para que las instalaciones ANTIGUAS se curen vía update.
 rm -f /etc/sddm.conf.d/zz-live-autologin.conf
+rm -f /etc/systemd/system/greetd.service.d/zz-bookos-live.conf /etc/greetd/bookos-live.toml
 rm -f /etc/skel/Desktop/liveinst.desktop /etc/skel/Desktop/anaconda.desktop
 rmdir /etc/skel/Desktop 2>/dev/null || true
 for d in /home/*/Desktop; do

@@ -1,12 +1,14 @@
 Name:           bookos-branding
 Version:        0.6.2
-Release:        4%{?dist}
+Release:        6%{?dist}
 Summary:        BookOS branding (logos, wallpapers, SDDM/Plymouth themes)
-License:        GPL-3.0
+License:        LicenseRef-BookOS
 URL:            https://bookos.es/
 BuildArch:      noarch
 Source0:        %{name}-%{version}.tar.gz
-Requires:       sddm
+# Sin Requires: sddm. El tema de SDDM es un directorio más; quien instala SDDM
+# es bookos-meta (y el kickstart de cada edición con escritorio). Pedirlo aquí
+# metía Qt y SDDM en la edición servidor, que no tiene pantalla gráfica.
 Requires:       plymouth
 
 Provides:       system-logos
@@ -72,7 +74,7 @@ for lp in wallpapers/Light/*.png; do
     "KPlugin": {
         "Id": "BookOS-$Name",
         "Name": "BookOS $Name",
-        "License": "CC-BY-SA-4.0",
+        "License": "LicenseRef-BookOS",
         "Authors": [{ "Name": "BookOS" }]
     }
 }
@@ -100,6 +102,12 @@ fi
 # KDE Plasma lockscreen QML (staged; activated by bookos-settings toggle)
 install -dm755 %{buildroot}/usr/share/bookos-settings/lockscreen
 cp lockscreen/*.qml %{buildroot}/usr/share/bookos-settings/lockscreen/
+
+# Cockpit lo busca por el ID de os-release (bookos). Ver
+# BookOS-ISO/rpm/cockpit-branding/branding.css.
+install -dm755 %{buildroot}/usr/share/cockpit/branding/bookos
+install -m644 cockpit/branding.css cockpit/logo.png cockpit/apple-touch-icon.png \
+    cockpit/favicon.ico %{buildroot}/usr/share/cockpit/branding/bookos/
 
 # Anaconda installer branding — kept under a bookos/ subdir so it never
 # conflicts with files owned by the anaconda package itself.
@@ -446,6 +454,7 @@ chmod 755 %{buildroot}/usr/lib/kernel/install.d/95-bookos-loaderentry.install
 %dir /usr/share/anaconda/cockpit/anaconda-webui/preload
 /usr/share/anaconda/cockpit/anaconda-webui/preload/bookos.css
 /usr/share/anaconda/pixmaps/bookos/anaconda-bookos.css
+/usr/share/cockpit/branding/bookos/
 
 %post
 # Antes del -R: actualizar el paquete deja bookos.script en español, y el
@@ -506,6 +515,14 @@ true
 /usr/libexec/bookos-apply-identity 2>/dev/null || true
 
 %changelog
+* Mon Oct 26 2026 BookOS <packages@bookos.es> - 0.6.2-6
+- El perfil de Anaconda ya no pide /boot ni /boot/efi: con BTRFS salían como
+  subvolúmenes y la partición EFI quedaba dentro del btrfs, sin GRUB arrancable.
+
+* Tue Oct 20 2026 BookOS <packages@bookos.es> - 0.6.2-5
+- Tema BookOS para Cockpit (login y panel), con el aspecto de la HIG.
+- Ya no pide SDDM: lo trae bookos-meta. La edición servidor no lo instala.
+
 * Mon Sep 28 2026 BookOS <packages@bookos.es> - 0.6.2-4
 - Icono nuevo para «Instalar en el disco duro» (bookos-install.svg).
 

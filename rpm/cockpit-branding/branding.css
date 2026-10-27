@@ -1,0 +1,198 @@
+/*
+ * BookOS — tema de Cockpit (administración web de la edición servidor).
+ *
+ * Cockpit sirve este fichero como /static/branding.css desde
+ * /usr/share/cockpit/branding/<ID de os-release>/, y lo enlazan el login, el
+ * shell y cada página interna después de su propia hoja: con la misma
+ * especificidad, gana esta. Por eso basta con reasignar los tokens de
+ * PatternFly 6; los nombres son los que usa Cockpit 368 (comprobados en su
+ * shell.css y en las hojas de systemd), no los de la documentación.
+ *
+ * El oscuro lo decide Cockpit con su propio selector de estilo, poniendo
+ * .pf-v6-theme-dark en <html> de cada marco. PatternFly lo declara con
+ * :where() (especificidad 0), así que :root.pf-v6-theme-dark le gana siempre.
+ *
+ * Sin @font-face ni url() a fuentes: la máquina que abre el panel no tiene por
+ * qué tener Nunito, y bajarla en cada login es lo contrario de una web ligera.
+ * La pila de sistema de la HIG (§2.2) sale de lo que ya hay en el cliente.
+ */
+
+/* ── Tokens, HIG §2.1 (fallback fijo: aquí no hay paleta de Ajustes) ── */
+:root {
+    --bk-bg: #f2f2f7;
+    --bk-card: #ffffff;
+    --bk-sbg: rgba(0, 0, 0, .06);
+    --bk-tx: #000000;
+    --bk-tx2: #8e8e93;
+    --bk-div: rgba(0, 0, 0, .08);
+    --bk-brd: rgba(0, 0, 0, .10);
+    --bk-hov: rgba(0, 0, 0, .04);
+    --bk-act: rgba(0, 0, 0, .08);
+    --bk-blue: #007aff;
+    --bk-toff: #e0e0e0;
+    --bk-green: #34c759;
+    --bk-red: #ff3b30;
+    --bk-orange: #ff9500;
+    /* HIG §2.5: sombra de reposo solo en claro. */
+    --bk-reposo: 0 1px 3px rgba(0, 0, 0, .05);
+}
+
+:root.pf-v6-theme-dark {
+    --bk-bg: #000000;
+    --bk-card: #1c1c1e;
+    --bk-sbg: rgba(255, 255, 255, .08);
+    --bk-tx: #ffffff;
+    --bk-tx2: #8e8e93;
+    --bk-div: rgba(255, 255, 255, .08);
+    --bk-brd: rgba(255, 255, 255, .06);
+    --bk-hov: rgba(255, 255, 255, .06);
+    --bk-act: rgba(255, 255, 255, .10);
+    --bk-blue: #0a84ff;
+    --bk-toff: #48484a;
+    --bk-green: #30d158;
+    --bk-red: #ff453a;
+    --bk-orange: #ff9f0a;
+    --bk-reposo: none;
+}
+
+/* Los dos selectores: los tokens de PatternFly se resuelven en el elemento
+ * donde se declaran, así que hay que volver a declararlos donde cambia --bk-*. */
+:root,
+:root.pf-v6-theme-dark {
+    --pf-t--global--background--color--primary--default: var(--bk-card);
+    --pf-t--global--background--color--primary--hover: var(--bk-hov);
+    --pf-t--global--background--color--secondary--default: var(--bk-bg);
+    --pf-t--global--background--color--secondary--hover: var(--bk-hov);
+    --pf-t--global--background--color--floating--default: var(--bk-card);
+    --pf-t--global--background--color--floating--hover: var(--bk-hov);
+    --pf-t--global--background--color--floating--secondary--default: var(--bk-bg);
+    --pf-t--global--background--color--control--default: var(--bk-sbg);
+    --pf-t--global--background--color--action--plain--alt--clicked: var(--bk-act);
+
+    --pf-t--global--text--color--regular: var(--bk-tx);
+    --pf-t--global--text--color--subtle: var(--bk-tx2);
+    --pf-t--global--text--color--placeholder: var(--bk-tx2);
+    --pf-t--global--text--color--link--default: var(--bk-blue);
+    --pf-t--global--text--color--link--hover: var(--bk-blue);
+    --pf-t--global--text--color--brand--default: var(--bk-blue);
+    --pf-t--global--text--color--brand--hover: var(--bk-blue);
+
+    --pf-t--global--border--color--default: var(--bk-brd);
+    --pf-t--global--border--color--subtle: var(--bk-div);
+    --pf-t--global--border--color--brand--default: var(--bk-blue);
+    --pf-t--global--border--color--brand--hover: var(--bk-blue);
+
+    /* HIG §4: --blue es el único color de acción. */
+    --pf-t--global--color--brand--default: var(--bk-blue);
+    --pf-t--global--color--brand--hover: var(--bk-blue);
+    --pf-t--global--color--brand--clicked: var(--bk-blue);
+    --pf-t--global--icon--color--brand--default: var(--bk-blue);
+
+    --pf-t--global--color--status--success--default: var(--bk-green);
+    --pf-t--global--color--status--danger--default: var(--bk-red);
+    --pf-t--global--color--status--warning--default: var(--bk-orange);
+
+    /* HIG §2.3, tabla cerrada. PatternFly 6 hace píldora de todo botón y
+     * control; la HIG solo reserva 999px para círculos y avatares. */
+    --pf-t--global--border--radius--small: 12px;
+    --pf-t--global--border--radius--medium: 14px;
+    --pf-t--global--border--radius--large: 26px;
+    --pf-t--global--border--radius--action--default: 12px;
+    --pf-t--global--border--radius--control--default: 14px;
+    --pf-t--global--border--radius--control--form-element: 14px;
+
+    /* El cuerpo pasaba por --font--family--body--legacy (Red Hat Text). */
+    --pf-t--global--font--family--body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Roboto, sans-serif;
+    --pf-t--global--font--family--heading: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Roboto, sans-serif;
+}
+
+/* ── Componentes ──────────────────────────────────────────────────────── */
+/* HIG §1: tarjetas sobre un fondo neutro. PatternFly pone la sección principal
+ * del color de tarjeta, y en oscuro una tarjeta #1c1c1e sobre #1c1c1e solo se
+ * distingue por un borde al 6 %. El marco del shell (main-container) va del
+ * mismo color: si no, asoma blanco por debajo de las páginas cortas. */
+.pf-v6-c-page__main-section {
+    --pf-v6-c-page__main-section--BackgroundColor: var(--bk-bg);
+}
+.pf-v6-c-page__main-container {
+    --pf-v6-c-page__main-container--BackgroundColor: var(--bk-bg);
+    --pf-v6-c-page__main-container--BorderColor: transparent;
+}
+
+/* HIG §4, «tarjeta de detalle»: radio 25, borde de 1px y sombra de reposo. */
+.pf-v6-c-card {
+    --pf-v6-c-card--BorderRadius: 25px;
+    --pf-v6-c-card--BorderColor: var(--bk-brd);
+    box-shadow: var(--bk-reposo);
+}
+
+/* HIG §4, botón estándar: radio 12, 13/Semibold. Los botones-enlace y los
+ * de icono se quedan con su peso: en negrita parecían todos acciones. */
+.pf-v6-c-button {
+    --pf-v6-c-button--BorderRadius: 12px;
+}
+.pf-v6-c-button:not(.pf-m-link, .pf-m-plain) {
+    font-weight: 600;
+}
+
+/* Fila de navegación del lateral: radio de control, no píldora. PatternFly
+ * pinta los enlaces con --text--color--subtle, que aquí es el gris de
+ * subtítulo (#8e8e93): parecían desactivados. Título de fila = --tx. */
+.pf-v6-c-nav {
+    --pf-v6-c-nav__link--BorderRadius: 14px;
+    --pf-v6-c-nav__link--Color: var(--bk-tx);
+}
+
+/* HIG §2.3: diálogos a 26. */
+.pf-v6-c-modal-box {
+    --pf-v6-c-modal-box--BorderRadius: 26px;
+}
+
+/* ── Login ────────────────────────────────────────────────────────────── */
+/* login.css no usa los tokens de PatternFly para el color: tiene sus propias
+ * --color-* en :root y en .pf-v6-theme-dark (0,1,0). */
+:root,
+:root.pf-v6-theme-dark {
+    --color-background: var(--bk-card);
+    --color-body-background: var(--bk-bg);
+    --color-text: var(--bk-tx);
+    --color-secondary-text: var(--bk-tx);
+    --color-text-light: var(--bk-tx2);
+    --color-text-lighter: var(--bk-tx2);
+    --color-primary: var(--bk-blue);
+    --color-primary-active: var(--bk-blue);
+    --color-link: var(--bk-blue);
+    --color-link-active: var(--bk-blue);
+    --color-border: var(--bk-brd);
+    --color-input-background: var(--bk-sbg);
+    --color-input: var(--bk-tx);
+    --color-danger: var(--bk-red);
+}
+
+/* El botón del login lleva su propio border-radius (píldora) y peso 400. */
+.login-pf .pf-v6-c-button {
+    border-radius: 12px;
+}
+.login-button {
+    font-weight: 600;
+}
+
+#badge {
+    inline-size: 96px;
+    block-size: 96px;
+    background-image: url("logo.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+/* ${NAME} lo rellena cockpit-ws con os-release: «BookOS». */
+/* HIG §2.2, título de app: 28/Bold, ls -0.4. Con .login-pf para empatar con
+ * las reglas de login.css, que va antes. */
+.login-pf #brand {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+}
+#brand::before {
+    content: "${NAME}";
+}

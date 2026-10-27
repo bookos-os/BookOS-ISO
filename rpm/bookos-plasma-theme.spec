@@ -2,7 +2,7 @@ Name:           bookos-plasma-theme
 Version:        0.6.1
 Release:        2%{?dist}
 Summary:        BookOS Qt look — color schemes and Kvantum styles
-License:        GPL-3.0
+License:        LicenseRef-BookOS
 URL:            https://bookos.es/
 BuildArch:      noarch
 Source0:        %{name}-%{version}.tar.gz

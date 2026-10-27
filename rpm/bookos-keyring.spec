@@ -2,7 +2,7 @@ Name:           bookos-keyring
 Version:        0.6.1
 Release:        5%{?dist}
 Summary:        BookOS release signing key and repository definitions
-License:        GPL-3.0
+License:        LicenseRef-BookOS
 URL:            https://bookos.es/
 BuildArch:      noarch
 

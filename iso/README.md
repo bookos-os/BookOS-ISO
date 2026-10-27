@@ -1,11 +1,91 @@
-# BookOS mínimo — Fedora 44 / KDE
+# BookOS 0.7.1 — Fedora 44 y escritorio propio
 
-La imagen predeterminada inicia el escritorio nativo de BookOS escrito en Rust
-(compositor Smithay + shell integrado). Incluye Ajustes, Tienda, Bienvenida, Terminal, Reloj,
-Bloc de notas, Reproductor de música, Calculadora, Novedades y Archivos de BookOS, más Firefox, Dolphin y KDE
-Partition Manager. Se conservan el escritorio Wayland, XWayland, servicios
+La imagen completa inicia el escritorio nativo de BookOS escrito en Rust
+(compositor Smithay + shell integrado), con nuestro greeter sobre greetd y
+Cage parcheado. Incluye todas las aplicaciones de `app-catalog.py`: Archivos,
+Bloc de notas, Monitor del sistema, Fuentes y Audio en GPUI; las demás en
+Tauri, además de Aether Browser y Bienvenida. Firefox proporciona el motor de
+Aether y el instalador; no aparece como un segundo navegador en el menú.
+No instala Plasma, SDDM, Dolphin ni la recuperación basada en KWin.
+Se conservan el escritorio Wayland, XWayland, servicios
 esenciales, firmware y soporte Samsung Galaxy Book (audio/huella y compilación
 DKMS). No incluye el entorno completo de aplicaciones Fedora KDE.
+
+## Construir la 0.7.1 para probar en un pendrive
+
+Desde `BookOS-ISO`, sin sudo:
+
+```bash
+bash iso/release.sh dev 0.7.1 --solo-iso
+```
+
+Recompila las veinte aplicaciones y los componentes propios, reconstruye
+los recursos, comprueba dependencias y conflictos, firma los RPM y compone
+la edición completa. Solo la composición solicita sudo. No publica ni abre
+una máquina virtual. Se necesitan conexión a Internet, Podman, Python 3,
+sudo, RPM/rpmkeys/rpmsign, createrepo_c, GPG y rsync. La clave privada de
+firma de BookOS debe estar importada en el llavero del usuario: se reutiliza
+el proceso de firma existente, sin copiar claves al contenedor.
+
+La comprobación previa avisa por debajo de un margen estimado de 60 GiB para
+una construcción sin caché (35 GiB al reanudar), pero no bloquea por ese
+umbral. Después de copiar el RPM de cada app al repo local se ejecuta
+`cargo clean`, también para el daemon de Teclas. Se conservan las descargas
+de Cargo y npm, pero las dependencias de Rust se recompilan para la siguiente
+app. `bookos-desktop` queda excluido de esa limpieza. Podman también consume
+espacio del anfitrión. Puedes comprobar los requisitos
+sin compilar añadiendo `--comprobar`, o usar otro disco:
+
+```bash
+BOOKOS_BUILD_ROOT=/ruta/con/espacio/bookos-0.7.1 bash iso/release.sh dev 0.7.1 --solo-iso
+```
+
+El resultado predeterminado es `.build/release/0.7.1/bookos-0.7.1-dev-x86_64.iso`,
+acompañado de su `.sha256` y los manifiestos de aplicaciones y fuentes.
+Los RPM van firmados; la ISO candidata lleva checksum. La firma minisign y
+la publicación pertenecen al flujo de lanzamiento completo.
+
+Graba el archivo ISO como imagen en el dispositivo USB completo; copiarlo
+como archivo dentro del pendrive no lo hace arrancable. La grabación borra
+el contenido del dispositivo que elijas. Prueba primero el live y luego la
+instalación en un disco de pruebas.
+
+Si una fase falla, se detiene sin componer una imagen parcial. Con los RPM
+ya construidos se puede reanudar con `--desde 2` (firma) o `--desde 3`
+(composición). No sobrescribe una ISO anterior: `OUTDIR=/otra/ruta` conserva
+las dos. Los proyectos hermanos se leen; las copias de compilación y los
+registros quedan bajo `BOOKOS_BUILD_ROOT`.
+
+## Ediciones
+
+`EDITION=completa|minima|servidor` (por defecto `completa`) elige qué lleva la
+imagen. La parte común está en `bookos-base.ks`; lo propio de cada una, en
+`edicion-<edición>.ks`, que `profile.py` inserta antes de la `%post` común.
+La completa conserva el nombre de fichero de siempre; las otras llevan la
+edición detrás del canal (`bookos-0.6.2-dev-minima-x86_64.iso`).
+
+```bash
+sudo EDITION=minima bash iso/build-in-podman.sh dev 0.6.2
+python3 iso/profile.py --check --edition servidor
+```
+
+- **completa**: lo de arriba, con instalador gráfico (WebUI en Firefox).
+- **minima**: para 512 MB de RAM. bookos-desktop, SDDM y foot; sin apps Tauri
+  (cada una pasa de 300 MB con su WebKit), sin Firefox, sin KWin ni PySide6
+  (`bookos-desktop-recovery`) y sin el soporte del Galaxy Book. Instalador en
+  modo texto: «Instalar en el disco duro» abre `bookos-instalar` en foot.
+- **servidor**: sin escritorio. SSH y Cockpit (`https://<ip>:9090`, con el
+  tema de `bookos-branding`) activos y con el puerto abierto. El live entra en
+  tty1; se instala con `bookos-instalar`. En el disco instalado se retira el
+  instalador, que arrastra GTK4 y Mesa (530 MiB medidos).
+
+Resolución en fedora:44 (`dnf --assumeno`, sin RPM Fusion, con los Requires de
+los spec nuevos de bookos-desktop y bookos-branding): completa 1091 paquetes y
+4,1 GiB instalados; mínima 638 y 1,9 GiB; servidor 530 y 1,6 GiB en el live
+(unos 1,1 GiB tras retirar el instalador).
+
+Mínima y servidor necesitan bookos-desktop >= 0.1.0-11 y bookos-branding >=
+0.6.2-5 en el repo; con los anteriores el `%post` de verificación aborta.
 
 ## Validación sin instalar el sistema
 
@@ -18,7 +98,7 @@ bash -n iso/build-iso.sh iso/build-in-podman.sh iso/files/bookos-boot-finalize.s
 Requiere Python con el paquete Fedora `pykickstart`. El constructor usa el mismo
 renderizador y valida todos los scripts del kickstart antes de ejecutar lorax.
 
-Primero se compilan las nueve apps desde los proyectos hermanos actuales, en
+Primero se compilan todas las apps desde los proyectos hermanos actuales, en
 Fedora 44, sin reutilizar los RPM publicados ni modificar esos proyectos:
 
 ```bash
@@ -81,9 +161,8 @@ integración >= 0.6.1-8, además de meta 0.6.1-3 y keyring 0.6.1-5. El
 `%post` de verificación del kickstart aborta con versiones anteriores. No hay
 que borrar estas comprobaciones para usar un repo antiguo.
 
-Las aplicaciones adicionales siguen siendo optativas: `ALLAPPS=S` añade
-visor, grabadora y BookOS New. La lista propia `APPS="..."` se admite en
-`build-iso.sh`. La selección predeterminada usa `N`.
+La edición completa incluye todo el catálogo sin necesitar `ALLAPPS=S`.
+`APPS="..."` permite añadir otros paquetes al invocar `build-iso.sh` directamente.
 
 ## Firmas y actualizaciones
 

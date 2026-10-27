@@ -15,6 +15,7 @@
 #
 # Extra:  ALLAPPS S incluye todas las apps opcionales (player, viewer, recorder)
 #         LOCALREPO=/otra/ruta  fuerza otro repo local
+#         EDITION=minima|servidor  otra edición (por defecto la completa)
 #         EXTRA_BOOT_ARGS="..." parámetros opcionales para un equipo concreto;
 #                               por defecto el arranque es genérico
 #
@@ -26,7 +27,7 @@ set -euo pipefail
 [ "$(id -u)" = "0" ] || { echo "✗ ejecuta con sudo: sudo bash $0 $*"; exit 1; }
 
 CHANNEL="${1:-dev}"
-VERSION="${2:-0.6.2}"
+VERSION="${2:-0.7.1}"
 ALLAPPS="${3:-N}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"          # …/BookOS-ISO/iso
 ROOT="$(dirname "$SCRIPT_DIR")"                      # …/BookOS-ISO
@@ -58,6 +59,8 @@ if [ -n "${NO_LOCAL_REPO:-}" ]; then
         -v "$WORK/tmp":/var/tmp \
         -e WORKDIR=/work \
         -e EXTRA_BOOT_ARGS \
+        -e EDITION \
+        -e SIGN \
         "$IMG" bash -c "
             set -e
             # La imagen fedora de contenedor trae %_install_langs en_US: rpm
@@ -89,6 +92,8 @@ exec podman run --rm --privileged --network=host --security-opt label=disable \
     -e BOOKOS_LOCAL_REPO=/localrepo \
     -e WORKDIR=/work \
     -e EXTRA_BOOT_ARGS \
+    -e EDITION \
+    -e SIGN \
     "$IMG" bash -c "
         set -e
         rm -f /etc/rpm/macros.image-language-conf

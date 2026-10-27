@@ -2,7 +2,7 @@ Name:           bookos-shell
 Version:        0.6.2
 Release:        1%{?dist}
 Summary:        BookOS Shell — terminal de BookOS
-License:        GPL-3.0
+License:        LicenseRef-BookOS
 URL:            https://bookos.es/
 Source0:        bookos-shell
 Source1:        bookos-shell.desktop

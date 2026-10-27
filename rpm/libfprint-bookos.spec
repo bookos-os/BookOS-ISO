@@ -1,6 +1,6 @@
 Name:           libfprint-bookos
 Version:        1.94.9
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        BookOS libfprint with FMV ETU906AXX-E (SPI) fingerprint support
 # Fork of upstream libfprint adding the Samsung Galaxy Book5 Pro SPI sensor
 # (likeablob/libfprint-fmv-etu906axx-e, SDCP-v2 branch). Replaces the stock
@@ -78,5 +78,8 @@ Obsoletes:      libfprint-devel < %{version}-%{release}
 %ldconfig_scriptlets
 
 %changelog
+* Fri Oct 09 2026 BookOS <packages@bookos.es> - 1.94.9-2
+- egismoc: informar del acierto sin esperar al reset del sensor (1,7 s menos)
+
 * Fri Jun 19 2026 BookOS <packages@bookos.es> - 1.94.9-1
 - Initial: libfprint fork with FMV ETU906AXX-E SPI sensor (Book5 Pro)

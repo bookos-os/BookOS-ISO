@@ -14,6 +14,8 @@ class AppCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for folder, package, spanish, english in catalog.APPS:
+                if catalog.tecnologia(folder) != 'tauri':
+                    continue
                 source = root / folder
                 tauri = source / 'src-tauri'
                 (tauri / 'linux').mkdir(parents=True)
@@ -24,18 +26,36 @@ class AppCatalogTests(unittest.TestCase):
                 (tauri / 'tauri.conf.json').write_text(json.dumps({'version': '1.2.3', 'bundle': {'linux': {'rpm': {'desktopTemplate': 'linux/desktop.hbs', 'files': {'/usr/share/app/data': 'data'}}}}}))
             catalog.prepare(root)
             for folder, package, spanish, english in catalog.APPS:
+                if catalog.tecnologia(folder) != 'tauri':
+                    continue
                 config = json.loads((root / folder / 'src-tauri/tauri.conf.json').read_text())
                 template = (root / folder / 'src-tauri/linux/bookos-iso.desktop.hbs').read_text()
                 self.assertIn(f'Name[es]={spanish}\n', template)
                 self.assertIn('Exec={{exec}} %F\n', template)
                 self.assertIn('MimeType=text/plain;', template)
                 self.assertEqual(config['version'], '1.2.3')
-                self.assertEqual(config['bundle']['linux']['rpm']['files'], {'/usr/share/app/data': 'data'})
+                self.assertEqual(config['bundle']['linux']['rpm']['files']['/usr/share/app/data'], 'data')
                 self.assertIn('<svg', (root / folder / 'src/index.html').read_text())
                 if package == 'bookos-settings':
                     script = (root / folder / 'src/main.js').read_text()
                     self.assertNotIn('mx.textContent', script)
                     self.assertIn('mx.innerHTML=m?', script)
+
+    def test_se_elige_gpui_y_se_conservan_los_servicios_necesarios(self):
+        self.assertEqual(set(catalog.GPUI), {'explorer', 'bookos-notepad', 'system-monitor', 'fonts', 'atmos'})
+        self.assertEqual(len({app[1] for app in catalog.APPS}), len(catalog.APPS))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for folder in ('remap', 'BookOS-Link/BookOS-Link-PC'):
+                tauri = root / folder / 'src-tauri'
+                tauri.mkdir(parents=True)
+                (tauri / 'tauri.conf.json').write_text(json.dumps({'bundle': {'linux': {'rpm': {}}}}))
+            catalog.prepare(root, ('remap', 'BookOS-Link/BookOS-Link-PC'))
+            teclas = json.loads((root / 'remap/src-tauri/tauri.conf.json').read_text())['bundle']['linux']['rpm']
+            self.assertIn('/usr/bin/bookos-teclasd', teclas['files'])
+            self.assertIn('/usr/share/polkit-1/actions/org.bookos.teclas.policy', teclas['files'])
+            link = json.loads((root / 'BookOS-Link/BookOS-Link-PC/src-tauri/tauri.conf.json').read_text())
+            self.assertIn('kdeconnectd', link['bundle']['linux']['rpm']['depends'])
 
     def test_manifest_rejects_missing_and_changed_apps_and_excludes_remote(self):
         with tempfile.TemporaryDirectory() as tmp:

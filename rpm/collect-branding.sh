@@ -166,6 +166,26 @@ else
     warn "no BookOS-Anaconda dir — installer keeps Fedora look"
 fi
 
+# ── Cockpit (administración web de la edición servidor) ─────────────────
+# El CSS vive en BookOS-ISO; las imágenes salen del mismo logo que el resto.
+# Sin favicon.ico propio, Cockpit serviría el de branding/fedora: busca cada
+# fichero por ID y, si falta, por ID_LIKE.
+mkdir -p "$STAGE/cockpit"
+cp "$ROOT/BookOS-ISO/rpm/cockpit-branding/branding.css" "$STAGE/cockpit/"
+if [ -f "$STAGE/logos/bookos.svg" ] && command -v rsvg-convert >/dev/null && command -v magick >/dev/null; then
+    # El SVG deja medio lienzo de margen (el icono ocupa 96 de cada 192 px):
+    # se recorta para que el logo llene la caja que le da el CSS.
+    rsvg-convert -w 768 -h 768 "$STAGE/logos/bookos.svg" -o "$STAGE/cockpit/grande.png"
+    magick "$STAGE/cockpit/grande.png" -trim +repage "$STAGE/cockpit/grande.png"
+    magick "$STAGE/cockpit/grande.png" -resize 192x192 "$STAGE/cockpit/logo.png"
+    magick "$STAGE/cockpit/grande.png" -resize 180x180 "$STAGE/cockpit/apple-touch-icon.png"
+    magick "$STAGE/cockpit/grande.png" -define icon:auto-resize=64,32,16 "$STAGE/cockpit/favicon.ico"
+    rm "$STAGE/cockpit/grande.png"
+    say "cockpit: branding.css + logo, apple-touch-icon y favicon"
+else
+    warn "cockpit: faltan rsvg-convert o magick; el spec no encontrará logo.png ni favicon.ico"
+fi
+
 # ── Pack ────────────────────────────────────────────────────────────────
 # Resolve the real user's home even under sudo, so the tarball lands where the
 # non-root `rpmbuild` reads from (not /root/rpmbuild/SOURCES).

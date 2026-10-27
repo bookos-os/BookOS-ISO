@@ -3,7 +3,7 @@ Version:        0.6.1
 # Release (no Version) sube con los añadidos: coherente con el resto de bookos-*.
 Release:        1%{?dist}
 Summary:        BookOS first-boot — asistente de primer arranque (crea el usuario)
-License:        GPL-3.0
+License:        LicenseRef-BookOS
 URL:            https://bookos.es/
 BuildArch:      noarch
 # Tarball topdir bookos-oobe-%%{version}/ with the staged tree.

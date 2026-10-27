@@ -11,6 +11,8 @@
 #
 # Optional env overrides:
 #   RELEASEVER=44                       Fedora base release (default 44)
+#   EDITION=completa|minima|servidor    qué lleva la imagen (default completa);
+#                                       ver iso/edicion-*.ks
 #   APPS="bookos-player bookos-viewer"  explicit optional-app list (implies allapps=S)
 #   SIGN=auto|0|1                       auto: sign if key exists; 1: require signing
 #   WORKDIR=/var/tmp/...                build scratch dir
@@ -31,6 +33,8 @@ usage() {
 [ -z "$OS_NAME" ] || [ -z "$CHANNEL" ] || [ -z "$VERSION" ] && usage
 case "$CHANNEL" in stable|beta|dev) ;; *) echo "✗ canal inválido: '$CHANNEL' (usa dev|beta|stable)"; exit 1;; esac
 case "$ALLAPPS" in S|s|Y|y|N|n) ;; *) echo "✗ allapps debe ser S o N"; exit 1;; esac
+EDITION="${EDITION:-completa}"
+case "$EDITION" in completa|minima|servidor) ;; *) echo "✗ edición inválida: '$EDITION' (usa completa|minima|servidor)"; exit 1;; esac
 [ "$(id -u)" = "0" ] || { echo "✗ debe ejecutarse como root (lorax lo necesita)"; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -50,7 +54,7 @@ EXTRA_BOOT_ARGS="${EXTRA_BOOT_ARGS:-}"
 # ── Optional app set ──────────────────────────────────────────────────────
 # "all apps" pulls the full BookOS app catalog on top of the core meta set.
 # Override the list with APPS="...". Empty when allapps=N.
-DEFAULT_OPTIONAL_APPS="bookos-viewer bookos-voice-recorder"
+DEFAULT_OPTIONAL_APPS="bookos-viewer bookos-voicerecorder"
 if [ -n "${APPS:-}" ]; then
     OPTIONAL_APPS="$APPS"
 elif [ "$ALLAPPS" = "S" ] || [ "$ALLAPPS" = "s" ] || [ "$ALLAPPS" = "Y" ] || [ "$ALLAPPS" = "y" ]; then
@@ -79,7 +83,7 @@ KS_IN="$SCRIPT_DIR/bookos-$CHANNEL.ks"
 # The same renderer is used by offline validation and production builds.
 read -ra OPTIONAL_APP_ARRAY <<< "$OPTIONAL_APPS"
 python3 "$SCRIPT_DIR/profile.py" --channel "$CHANNEL" --name "$OS_NAME" \
-    --version "$VERSION" --release "$RELEASEVER" --apps "${OPTIONAL_APP_ARRAY[@]}" \
+    --version "$VERSION" --release "$RELEASEVER" --edition "$EDITION" --apps "${OPTIONAL_APP_ARRAY[@]}" \
     > "$WORKDIR/bookos-flat.ks"
 
 # ── Optional: LOCAL bookos repo ─────────────────────────────────────────────
@@ -198,7 +202,7 @@ s = open(p).read()
 anchor = "mkdir ${GRUB2DIR}\n"
 ## `runcmd cp -a` y no `install`: el `install` de lorax es un shutil.copy2 por
 ## fichero (pylorax/sysutils.py) y revienta con directorios, y el tema tiene
-## icons/ y fonts/. Con cp -a tampoco hay que tocar esto al anadir ficheros.
+## icons/. Con cp -a tampoco hay que tocar esto al anadir ficheros.
 add = anchor + """
 ## BookOS: tema grafico del menu de arranque (viene de bookos-branding).
 %if exists("boot/grub2/themes/bookos/theme.txt"):
@@ -211,7 +215,7 @@ open(p, "w").write(s.replace(anchor, add))
 PY
 done
 
-_THEME_PREAMBLE='insmod gfxterm\ninsmod gfxmenu\ninsmod png\nif [ -f ($root)/boot/grub2/themes/bookos/theme.txt ]; then\n  loadfont ($root)/boot/grub2/themes/bookos/fonts/bookos-20.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/fonts/bookos-20-b.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/fonts/bookos-16.pf2\n  set theme=($root)/boot/grub2/themes/bookos/theme.txt\n  export theme\n  terminal_output gfxterm\nfi\n'
+_THEME_PREAMBLE='insmod gfxterm\ninsmod gfxmenu\ninsmod png\nif [ -f ($root)/boot/grub2/themes/bookos/theme.txt ]; then\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-20.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-20-b.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-16.pf2\n  set theme=($root)/boot/grub2/themes/bookos/theme.txt\n  export theme\n  terminal_output gfxterm\nfi\n'
 for _cfg in "$LORAX_TPL"/live/config_files/x86/grub2-bios.cfg \
             "$LORAX_TPL"/live/config_files/x86/grub2-efi.cfg; do
     [ -f "$_cfg" ] || continue
@@ -224,7 +228,10 @@ echo "[✓] Plantillas de lorax parcheadas en $LORAX_TPL (título 'Start $OS_NAM
 # ── Build ──────────────────────────────────────────────────────────────────
 # Slugify the OS name for the filename (spaces → -, lowercase).
 SLUG="$(echo "$OS_NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9.-')"
-ISO_NAME="${SLUG}-${VERSION}-${CHANNEL}-x86_64.iso"
+# La completa conserva el nombre de siempre: release.sh y la web lo esperan así.
+EDITION_SUFFIX=""
+[ "$EDITION" = completa ] || EDITION_SUFFIX="-$EDITION"
+ISO_NAME="${SLUG}-${VERSION}-${CHANNEL}${EDITION_SUFFIX}-x86_64.iso"
 # Etiqueta del volumen: es el nombre con el que aparece el pendrive al
 # conectarlo, así que va el nombre a secas («BookOS»), sin versión. Sin
 # espacios (el arranque la busca como root=live:CDLABEL=…) y ≤32 (ISO 9660).
@@ -248,6 +255,7 @@ fi
 echo "──────────────────────────────────────────────"
 echo "  OS        : $OS_NAME"
 echo "  Channel   : $CHANNEL"
+echo "  Edition   : $EDITION"
 echo "  Version   : $VERSION"
 echo "  Fedora    : $RELEASEVER"
 echo "  All apps  : $ALLAPPS  ${OPTIONAL_APPS:+($OPTIONAL_APPS)}"

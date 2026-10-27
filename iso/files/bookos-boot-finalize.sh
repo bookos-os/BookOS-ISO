@@ -82,19 +82,34 @@ if [ -d /sys/firmware/efi ]; then
     partuuid=$(lsblk -dnro PARTUUID "$esp")
     [ -b "$disk" ] && [ -n "$part" ] && [ -n "$partuuid" ] || fail 'Cannot identify ESP disk and partition'
 
+    # EFI/fedora lo puede compartir otro Fedora del mismo disco; ver
+    # bookos-efi-sync en bookos-base.ks.
+    /usr/local/sbin/bookos-efi-sync
+    for f in shimx64.efi grubx64.efi grub.cfg; do
+        [ -s "/boot/efi/EFI/bookos/$f" ] || fail "Missing EFI/bookos/$f"
+    done
+
     # Match label AND target partition/path, including normal efibootmgr suffixes.
     entry_ids() {
-        awk -v uuid="$partuuid" '
+        local dir=${1:-bookos}
+        # Por el entorno y no con -v: awk interpretaría «\b» como retroceso.
+        loader="\\efi\\$dir\\shimx64.efi" awk -v uuid="$partuuid" '
             /^Boot[[:xdigit:]]{4}\*?[[:space:]]+BookOS([[:space:]]|$)/ {
                 line=tolower($0)
-                if (index(line,tolower(uuid)) && index(line,"\\efi\\fedora\\shimx64.efi"))
+                if (index(line,tolower(uuid)) && index(line,ENVIRON["loader"]))
                     print substr($1,5,4)
             }'
     }
     entries_output=$(efibootmgr -v) || fail 'Cannot read UEFI boot variables'
+    # Las entradas «BookOS» de instalaciones anteriores apuntan a EFI/fedora,
+    # que arranca lo que diga su stub, quizá otro sistema.
+    for old in $(entry_ids fedora <<< "$entries_output"); do
+        efibootmgr -q -b "$old" -B
+    done
+    entries_output=$(efibootmgr -v)
     ours=$(entry_ids <<< "$entries_output" | head -n1)
     if [ -z "$ours" ]; then
-        efibootmgr -c -d "$disk" -p "$part" -L BookOS -l '\EFI\fedora\shimx64.efi'
+        efibootmgr -c -d "$disk" -p "$part" -L BookOS -l '\EFI\bookos\shimx64.efi'
         entries_output=$(efibootmgr -v)
         ours=$(entry_ids <<< "$entries_output" | head -n1)
     fi

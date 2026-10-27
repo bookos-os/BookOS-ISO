@@ -61,8 +61,8 @@ class ProfileTests(unittest.TestCase):
                 raw = profile.render(channel)
                 handler = profile.validate(raw)
                 packages = set(handler.packages.packageList)
-                self.assertTrue({"bookos-shell", "bookos-player", "bookos-clock", "bookos-notepad", "bookos-calc", "bookos-settings", "bookos-store", "bookos-welcome", "bookos-new", "bookos-explorer", "bookos-desktop", "firefox", "dolphin", "kde-partitionmanager"} <= packages)
-                self.assertFalse({"konsole", "bookos-viewer", "bookos-voice-recorder", "openssh-server"} & packages)
+                self.assertTrue({"bookos-shell", "bookos-player", "bookos-clock", "bookos-notepad", "bookos-calc", "bookos-settings", "bookos-store", "bookos-welcome", "bookos-new", "bookos-explorer", "bookos-desktop", "firefox", "kde-partitionmanager", "bookos-greeter", "greetd", "bookos-viewer", "bookos-voicerecorder", "bookos-system-monitor", "bookos-fonts", "bookos-audio", "bookos-browser", "bookos-connect", "bookos-lumina", "bookos-teclas", "bookos-camera", "bookos-calendar", "bookos-cursors"} <= packages)
+                self.assertFalse({"konsole", "dolphin", "sddm", "kwin", "bookos-desktop-recovery", "openssh-server"} & packages)
                 self.assertTrue(handler.packages.excludeWeakdeps)
                 self.assertFalse(handler.packages.handleMissing)
                 self.assertNotIn("@^kde-desktop-environment", raw)
@@ -78,9 +78,27 @@ class ProfileTests(unittest.TestCase):
         self.assertIn('-v "$OUTDIR":/out', script)
         self.assertIn('BookOS $CHANNEL $VERSION /out $ALLAPPS', script)
 
-    def test_optional_apps_remain_opt_in(self):
-        h = profile.validate(profile.render(apps=["bookos-viewer", "bookos-voice-recorder"]))
+    def test_todas_las_apps_van_en_la_edicion_completa(self):
+        h = profile.validate(profile.render())
         self.assertIn("bookos-viewer", h.packages.packageList)
+        self.assertIn("bookos-voicerecorder", h.packages.packageList)
+
+    def test_el_live_usa_greetd_y_el_disco_recupera_el_acceso_normal(self):
+        raw = profile.render()
+        self.assertIn('ExecStart=/usr/bin/greetd --config /etc/greetd/bookos-live.toml', raw)
+        self.assertIn('systemctl enable --force greetd.service', raw)
+        self.assertIn('command = "/usr/bin/bookos-session"\nuser = "liveuser"', raw)
+        self.assertIn('rm -f /etc/systemd/system/greetd.service.d/zz-bookos-live.conf /etc/greetd/bookos-live.toml', raw)
+
+    def test_se_verifica_el_gestor_despues_de_habilitarlo(self):
+        for channel in ('dev', 'beta', 'stable'):
+            with self.subTest(channel=channel):
+                scripts = profile.validate(profile.render(channel)).scripts
+                habilitar = next(i for i, script in enumerate(scripts)
+                                 if 'systemctl enable --force greetd.service' in script.script)
+                verificar = next(i for i, script in enumerate(scripts)
+                                 if '✗ greetd no es el gestor de acceso predeterminado' in script.script)
+                self.assertLess(habilitar, verificar)
 
     def test_invalid_substitutions_are_rejected(self):
         for kwargs in ({"name": 'BookOS"; touch /tmp/bad'}, {"apps": ["foo\n%post"]}, {"channel": "../../other"}):
@@ -97,9 +115,15 @@ Boot0007* BookOS\tHD(1,GPT,abcd,0,1)/File(\\EFI\\fedora\\shimx64.efi)
 Boot0008* BookOS HD(1,GPT,other,0,1)/File(\\EFI\\fedora\\shimx64.efi)
 Boot0009* BookOS HD(1,GPT,abcd,0,1)/File(\\EFI\\BOOT\\BOOTX64.EFI)
 Boot000A BookOS HD(1,GPT,abcd,0,1)/File(\\EFI\\FEDORA\\SHIMX64.EFI)
+Boot000B* BookOS HD(1,GPT,abcd,0,1)/File(\\EFI\\bookos\\shimx64.efi)
+Boot000C* BookOS HD(1,GPT,other,0,1)/File(\\EFI\\bookos\\shimx64.efi)
 """
-        result = subprocess.run(["bash", "-c", "partuuid=abcd\n" + function + "\nentry_ids"], input=fixture, text=True, capture_output=True, check=True)
-        self.assertEqual(result.stdout.splitlines(), ["0007", "000A"])
+        def ids(*args):
+            command = "partuuid=abcd\n" + function + "\nentry_ids " + " ".join(args)
+            return subprocess.run(["bash", "-c", command], input=fixture, text=True, capture_output=True, check=True).stdout.splitlines()
+        self.assertEqual(ids(), ["000B"])
+        # Las de EFI/fedora son las que se borran al reinstalar.
+        self.assertEqual(ids("fedora"), ["0007", "000A"])
 
     def test_boot_validation_rejects_incomplete_targets_and_propagates_errors(self):
         for scenario in ("valid", "missing-initramfs", "no-entries", "dracut-failed"):
@@ -142,3 +166,62 @@ grub2-editenv() { return 0; }
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EditionTests(unittest.TestCase):
+    def packages(self, edition):
+        return profile.validate(profile.render(edition=edition)).packages
+
+    def test_every_edition_parses_with_weak_deps_excluded(self):
+        for edition in profile.EDITIONS:
+            with self.subTest(edition=edition):
+                raw = profile.render(edition=edition)
+                # pykickstart junta las secciones, pero la última decide las
+                # opciones: una sola sin la bandera la apaga para todas.
+                headers = re.findall(r"^%packages.*$", raw, re.M)
+                self.assertGreaterEqual(len(headers), 2)
+                for header in headers:
+                    self.assertIn("--exclude-weakdeps", header)
+                self.assertTrue(self.packages(edition).excludeWeakdeps)
+
+    def test_invalid_edition_is_rejected(self):
+        for edition in ("../bookos-base", "", "Completa"):
+            with self.subTest(edition=edition), self.assertRaises(ValueError):
+                profile.render(edition=edition)
+
+    def test_minimal_edition_leaves_out_what_does_not_fit_in_512_mb(self):
+        packages = self.packages("minima")
+        self.assertTrue({"bookos-desktop", "sddm", "foot", "anaconda-tui"} <= set(packages.packageList))
+        self.assertFalse({"firefox", "kwin", "bookos-meta", "bookos-welcome", "bookos-desktop-recovery",
+                          "bookos-settings", "bookos-shell", "kernel-devel", "anaconda"} & set(packages.packageList))
+        self.assertIn("openssh-server", packages.excludedList)
+
+    def test_server_edition_has_no_desktop_and_is_remotely_managed(self):
+        handler = profile.validate(profile.render(edition="servidor"))
+        packages = set(handler.packages.packageList)
+        self.assertTrue({"openssh-server", "cockpit-ws", "cockpit-system", "anaconda-tui"} <= packages)
+        self.assertFalse({"bookos-desktop", "sddm", "firefox", "anaconda"} & packages)
+        self.assertNotIn("openssh-server", handler.packages.excludedList)
+        self.assertIn("sshd", handler.services.enabled)
+        self.assertIn("cockpit.socket", handler.services.enabled)
+        self.assertTrue({"ssh", "cockpit"} <= set(handler.firewall.services))
+
+    def test_live_cleanup_removes_passwordless_sudo_and_autologin(self):
+        raw = profile.render(edition="servidor")
+        script = re.search(r"^cat > /usr/local/sbin/bookos-live-cleanup <<'EOF'\n(.*?)^EOF$", raw, re.M | re.S).group(1)
+        live_only = ("etc/sudoers.d/zz-bookos-live", "usr/local/bin/bookos-instalar",
+                     "etc/profile.d/bookos-live.sh", "etc/sddm.conf.d/zz-live-autologin.conf",
+                     "etc/systemd/system/getty@tty1.service.d/zz-bookos-live-autologin.conf",
+                     "etc/systemd/system/greetd.service.d/zz-bookos-live.conf", "etc/greetd/bookos-live.toml")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in live_only + ("var/lib/.keep",):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text("live")
+            for path in ("/etc/", "/usr/local/bin/", "/var/lib/", "/home/", "/.buildstamp"):
+                script = script.replace(path, tmp + path)
+            # Sin liveuser: lo que se comprueba aquí son los ficheros.
+            result = subprocess.run(["bash", "-c", "id() { return 1; }\n" + script], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in live_only:
+                self.assertFalse((root / name).exists(), name)

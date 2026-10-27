@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 from pathlib import Path
 import subprocess
 
@@ -12,13 +13,84 @@ APPS = (
     ('BookOS-Settings', 'bookos-settings', 'Ajustes', 'Settings'),
     ('bookos-clock', 'bookos-clock', 'Reloj', 'Clock'),
     ('bookos-calc', 'bookos-calc', 'Calculadora', 'Calculator'),
-    ('bookos-notepad', 'bookos-notepad', 'Bloc de notas', 'Notepad'),
     ('BookOS-Player', 'bookos-player', 'Reproductor de música', 'Music'),
     ('bookos-store', 'bookos-store', 'Tienda', 'Store'),
     ('bookos-shell', 'bookos-shell', 'Terminal', 'Terminal'),
     ('BookOS-New', 'bookos-new', 'Novedades', "What's New"),
     ('explorer', 'bookos-explorer', 'Archivos', 'Files'),
+    ('bookos-notepad', 'bookos-notepad', 'Bloc de notas', 'Notepad'),
+    ('system-monitor', 'bookos-system-monitor', 'Monitor del sistema', 'System Monitor'),
+    ('fonts', 'bookos-fonts', 'Fuentes', 'Fonts'),
+    ('atmos', 'bookos-audio', 'Audio', 'Audio'),
+    ('BookOS-Viewer', 'bookos-viewer', 'Visor', 'Viewer'),
+    ('BookOS-VoiceRecorder', 'bookos-voicerecorder', 'Grabadora', 'Voice Recorder'),
+    ('calendar', 'bookos-calendar', 'Calendario', 'Calendar'),
+    ('camera', 'bookos-camera', 'Cámara', 'Camera'),
+    ('BookOS-Link/BookOS-Link-PC', 'bookos-connect', 'Book Connect', 'Book Connect'),
+    ('lumina', 'bookos-lumina', 'Lumina', 'Lumina'),
+    ('remap', 'bookos-teclas', 'Teclas', 'Keys'),
+    ('bookos-browser', 'bookos-browser', 'Aether Browser', 'Aether Browser'),
 )
+
+GPUI = {'explorer': 'GPUI', 'bookos-notepad': 'GPUI', 'system-monitor': 'GPUI',
+        'fonts': '.', 'atmos': 'GPUI'}
+COMPARTIDAS = ('plantilla-gpui',)
+
+
+def tecnologia(folder):
+    return 'gpui' if folder in GPUI else 'firefox' if folder == 'bookos-browser' else 'tauri'
+
+
+def comprobar_fuentes(root):
+    for folder, _, _, _ in APPS:
+        manifest = (GPUI[folder] + '/Cargo.toml' if folder in GPUI else
+                    'construir.sh' if folder == 'bookos-browser' else 'src-tauri/tauri.conf.json')
+        if not (root / folder / manifest).is_file():
+            raise ValueError(f'Falta la fuente de {folder}: {manifest}')
+    for manifest in ('plantilla-gpui/Cargo.toml', 'plantilla-gpui/bookos-ui/Cargo.toml',
+                     'fonts/vendor/gpui/crates/gpui/Cargo.toml',
+                     'bookos-desktop/Cargo.lock', 'bookos-desktop/crates/bookos-greeter/Cargo.toml',
+                     'bookos-desktop/session/greeter/cage/bookos-entrada.patch',
+                     'BookOS-Welcome/data/bookos-welcome.spec',
+                     'BookOS-Cursor/scripts/build-cursors.sh', 'bookos-sounds/tema/index.theme'):
+        if not (root / manifest).is_file():
+            raise ValueError(f'Falta una fuente compartida: {manifest}')
+    for variante in ('Dark', 'Light', 'Tinted-Dark', 'Tinted-Light'):
+        if not (root / 'Icons' / f'BookOS-Icon-Pack-{variante}' / 'index.theme').is_file():
+            raise ValueError(f'Falta el tema de iconos {variante}')
+
+
+def copiar(root, destino, folders=()):
+    comprobar_fuentes(root)
+    elegidas = tuple(folders) or tuple(app[0] for app in APPS)
+    if set(elegidas) - {app[0] for app in APPS}:
+        raise ValueError('Aplicación desconocida')
+    carpetas = set(elegidas)
+    if any(folder in GPUI for folder in elegidas):
+        carpetas.update((*COMPARTIDAS, 'fonts'))
+    for folder in sorted(carpetas):
+        copia = destino / folder
+        if copia.exists():
+            shutil.rmtree(copia)
+        shutil.copytree(root / folder, copia, symlinks=True,
+                        ignore=shutil.ignore_patterns('.git', 'target', 'node_modules', 'dist',
+                                                     '.build', '.venv', '__pycache__'))
+    fuentes = {}
+    for folder in sorted(carpetas):
+        revision = subprocess.run(['git', '-C', str(root / folder), 'rev-parse', 'HEAD'],
+                                  capture_output=True, text=True)
+        digest = hashlib.sha256()
+        for path in sorted((destino / folder).rglob('*')):
+            if path.is_file() or path.is_symlink():
+                digest.update(str(path.relative_to(destino / folder)).encode() + b'\0')
+                digest.update(str(path.lstat().st_mode).encode() + b'\0')
+                digest.update(path.readlink().as_posix().encode() if path.is_symlink()
+                              else bytes.fromhex(sha256(path)))
+        fuentes[folder] = {'revision': revision.stdout.strip() if revision.returncode == 0 else None,
+                           'sha256_fuentes': digest.hexdigest()}
+    registro = destino / 'bookos-fuentes.json'
+    anteriores = json.loads(registro.read_text()) if folders and registro.exists() else {}
+    registro.write_text(json.dumps(anteriores | fuentes, indent=2) + '\n')
 
 
 def sha256(path):
@@ -34,11 +106,28 @@ def prepare(root, folders=()):
     for folder, package, spanish, english in APPS:
         if folders and folder not in folders:
             continue
+        if tecnologia(folder) != 'tauri':
+            continue
         tauri = root / folder / 'src-tauri'
         config_path = tauri / 'tauri.conf.json'
         config = json.loads(config_path.read_text())
         config['productName'] = package
         config['mainBinaryName'] = package
+        if package == 'bookos-connect':
+            config['bundle'].setdefault('icon', ['icons/icon.png'])
+            rpm = config['bundle'].setdefault('linux', {}).setdefault('rpm', {})
+            rpm.setdefault('depends', []).append('kdeconnectd')
+        if package == 'bookos-teclas':
+            rpm = config['bundle']['linux']['rpm']
+            files = rpm.setdefault('files', {})
+            files['/usr/bin/bookos-teclasd'] = '../teclasd/target/release/bookos-teclasd'
+            for source, target in (
+                ('bookos-teclasd.service', '/usr/lib/systemd/system/'),
+                ('org.bookos.Teclas.conf', '/usr/share/dbus-1/system.d/'),
+                ('org.bookos.Teclas.service', '/usr/share/dbus-1/system-services/'),
+                ('org.bookos.teclas.policy', '/usr/share/polkit-1/actions/'),
+                ('bookos-teclasd.quirks', '/usr/share/libinput/50-')):
+                files[target + source] = '../teclasd/sistema/' + source
         linux = config.setdefault('bundle', {}).setdefault('linux', {})
         template_path = tauri / 'linux/bookos-iso.desktop.hbs'
         template_path.parent.mkdir(exist_ok=True)
@@ -85,9 +174,10 @@ def prepare(root, folders=()):
                 script.write_text(js)
 
 
-def record(repo):
+def record(repo, sources=None):
     entries = []
-    for _, package, spanish, english in APPS:
+    fuentes = json.loads((sources / 'bookos-fuentes.json').read_text()) if sources else {}
+    for folder, package, spanish, english in APPS:
         matches = []
         for rpm in repo.glob('*.rpm'):
             result = subprocess.check_output(
@@ -95,14 +185,16 @@ def record(repo):
                 text=True, stderr=subprocess.DEVNULL)
             name, evra = result.split('\t')
             if name == package:
-                matches.append(dict(name=name, nevra=f'{name}-{evra}', file=rpm.name, sha256=sha256(rpm)))
+                matches.append(dict(name=name, nevra=f'{name}-{evra}', file=rpm.name, sha256=sha256(rpm),
+                                    tecnologia=tecnologia(folder), fuente=folder, **fuentes.get(folder, {})))
         if len(matches) != 1:
             raise ValueError(f'{package}: expected exactly one freshly built RPM, got {len(matches)}')
+        desktop_name = 'com.org.bookos' if package == 'bookos-system-monitor' else package
         payload = subprocess.check_output(['rpm2cpio', str(repo / matches[0]['file'])])
         desktop = subprocess.run(
-            ['cpio', '-i', '--to-stdout', f'./usr/share/applications/{package}.desktop'],
+            ['cpio', '-i', '--to-stdout', f'./usr/share/applications/{desktop_name}.desktop'],
             input=payload, capture_output=True, check=True).stdout.decode()
-        if not {f'Name={english}', f'Name[es]={spanish}'} <= set(desktop.splitlines()):
+        if tecnologia(folder) == 'tauri' and not {f'Name={english}', f'Name[es]={spanish}'} <= set(desktop.splitlines()):
             raise ValueError(f'Incorrect launcher names in {package}')
         entries.extend(matches)
     (repo / 'bookos-apps.json').write_text(json.dumps(entries, indent=2) + '\n')
@@ -161,13 +253,22 @@ def pin(repo, kickstart):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['prepare', 'record', 'verify', 'resign', 'pin', 'list'])
+    parser.add_argument('command', choices=['prepare', 'record', 'verify', 'resign', 'pin', 'list', 'comprobar', 'copiar', 'plan'])
     parser.add_argument('directory', type=Path, nargs='?')
     parser.add_argument('extra', nargs='*', help='kickstart para pin; carpetas para prepare')
     args = parser.parse_args()
     if args.command == 'list':
         for app in APPS:
             print(app[0])
+    elif args.command == 'plan':
+        for folder, package, _, _ in APPS:
+            print(folder, package, tecnologia(folder), GPUI.get(folder, '.'), sep='\t')
+    elif args.command == 'comprobar':
+        comprobar_fuentes(args.directory)
+    elif args.command == 'copiar':
+        copiar(args.directory, Path(args.extra[0]), args.extra[1:])
+    elif args.command == 'record':
+        record(args.directory, Path(args.extra[0]) if args.extra else None)
     elif args.command == 'pin':
         pin(args.directory, Path(args.extra[0]))
     elif args.command == 'prepare':

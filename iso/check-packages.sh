@@ -3,13 +3,11 @@
 # and a writable, isolated output directory at /work. Does not install a target OS.
 set -euo pipefail
 export RPM_TOPDIR=/work/rpmbuild
+export CARGO_HOME=/work/cargo
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
 mkdir -p "$RPM_TOPDIR"/{SOURCES,RPMS,SRPMS,BUILD,BUILDROOT,SPECS} /work/repo
+rm -rf "$RPM_TOPDIR/RPMS" "$RPM_TOPDIR/BUILD" "$RPM_TOPDIR/BUILDROOT"
 project=/sources/BookOS-ISO
-remote_exclusions=$(python3 - "$project/iso/app-catalog.py" <<'PY'
-import runpy, sys
-print(','.join(app[1] for app in runpy.run_path(sys.argv[1])['APPS']))
-PY
-)
 # Cada Source0 es <nombre>-<versión>.tar.gz con la versión de SU spec, y no
 # tienen por qué coincidir (0.6.2: branding sube, integración sigue en 0.6.1).
 spec_version() { awk '/^Version:/ {print $2; exit}' "$project/rpm/$1.spec"; }
@@ -19,11 +17,24 @@ tar --transform "s,^\.,$integration," \
     -czf "$RPM_TOPDIR/SOURCES/$integration.tar.gz" \
     -C "$project/rpm/bookos-desktop-integration" .
 desktop="bookos-desktop-$(spec_version bookos-desktop)"
+rm -rf /work/desktop-src /work/cage-srpm
+mkdir -p /work/desktop-src /work/cage-srpm
+tar --exclude='./target' --exclude='./.git' --exclude='./.claude' \
+    -C /sources/bookos-desktop -cf - . | tar -C /work/desktop-src -xf -
+dnf download --source --destdir=/work/cage-srpm cage
+(cd /work/cage-srpm && rpm2cpio cage-*.src.rpm | cpio -idm --quiet)
+mapfile -t archivos_cage < <(find /work/cage-srpm -maxdepth 1 -name 'cage-*.tar.*' ! -name '*.sig')
+[ "${#archivos_cage[@]}" = 1 ] || { echo 'No se encontró una única fuente de Cage' >&2; exit 1; }
+mkdir /work/desktop-src/bookos-cage
+tar -xf "${archivos_cage[0]}" --strip-components=1 -C /work/desktop-src/bookos-cage
+patch -d /work/desktop-src/bookos-cage -p1 < /sources/bookos-desktop/session/greeter/cage/bookos-entrada.patch
 tar --transform "s,^\.,$desktop," -czf "$RPM_TOPDIR/SOURCES/$desktop.tar.gz" \
-    --exclude='./target' --exclude='./.git' --exclude='./.claude' \
-    -C /sources/bookos-desktop .
+    -C /work/desktop-src .
 cp "$project/rpm/RPM-GPG-KEY-bookos" "$project/rpm/bookos.repo" "$RPM_TOPDIR/SOURCES/"
 python3 "$project/iso/collect-visuals.py" /sources "$RPM_TOPDIR/SOURCES"
+cursors="bookos-cursors-$(spec_version bookos-cursors)"
+tar --exclude='./build' --exclude='./.git' --transform "s,^\.,$cursors," \
+    -czf "$RPM_TOPDIR/SOURCES/$cursors.tar.gz" -C /sources/BookOS-Cursor .
 # Temas, huella, audio y asistente: antes se tomaban ya construidos del
 # servidor. Desde que se vació (2026-09-24) todo sale de aquí, del código, para
 # que la ISO se pueda rehacer desde cero y lo probado sea lo que se publica.
@@ -32,13 +43,23 @@ bash "$project/rpm/collect-galaxybook-fixes.sh" "$(spec_version bookos-galaxyboo
 libfprint="libfprint-bookos-$(spec_version libfprint-bookos)"
 tar --exclude='./build' --exclude='./.git' --transform "s,^\.,$libfprint," \
     -czf "$RPM_TOPDIR/SOURCES/$libfprint.tar.gz" -C /sources/libfprint-fmv-etu906axx-e-fix4Book5Pro .
+# Solo el tema ya generado: los .wav de nuevos/ y viejos/ pesan 20 veces más y
+# no van al paquete. tema/ lo deja elegir.py, que necesita su venv con
+# pedalboard; por eso se empaqueta hecho en vez de generarlo aquí.
+sounds="bookos-sounds-$(spec_version bookos-sounds)"
+[ -f /sources/bookos-sounds/tema/index.theme ] || {
+    echo "falta bookos-sounds/tema: ejecuta elegir.py en bookos-sounds" >&2
+    exit 1
+}
+tar --transform "s,^\.,$sounds," -czf "$RPM_TOPDIR/SOURCES/$sounds.tar.gz" \
+    -C /sources/bookos-sounds ./tema
 welcome_spec=/sources/BookOS-Welcome/data/bookos-welcome.spec
 welcome="bookos-welcome-$(awk '/^Version:/ {print $2; exit}' "$welcome_spec")"
 tar --exclude='./build' --exclude='./.git' --transform "s,^\.,$welcome," \
     -czf "$RPM_TOPDIR/SOURCES/$welcome.tar.gz" -C /sources/BookOS-Welcome .
 specs=()
 for package in bookos-branding bookos-desktop-integration bookos-desktop bookos-meta bookos-keyring bookos-icons \
-               bookos-plasma-theme bookos-gtk-theme bookos-galaxybook-audio libfprint-bookos; do
+               bookos-plasma-theme bookos-gtk-theme bookos-sounds bookos-cursors bookos-galaxybook-audio libfprint-bookos; do
     specs+=("$project/rpm/$package.spec")
 done
 # Welcome enlaza Qt con versión de símbolo (Qt_6.11…). Se compila contra el Qt
@@ -53,7 +74,14 @@ for spec in "${specs[@]}"; do
 done
 # Los debuginfo no van a la ISO ni al repo publicado.
 find "$RPM_TOPDIR/RPMS" -name '*-debug*.rpm' -delete
-cp "$RPM_TOPDIR"/RPMS/*/*.rpm /work/repo/
+for nuevo in "$RPM_TOPDIR"/RPMS/*/*.rpm; do
+    nombre=$(rpm -qp --qf '%{NAME}' "$nuevo")
+    for anterior in /work/repo/*.rpm; do
+        [ -e "$anterior" ] || continue
+        if [ "$(rpm -qp --qf '%{NAME}' "$anterior")" = "$nombre" ]; then rm -f -- "$anterior"; fi
+    done
+    cp "$nuevo" /work/repo/
+done
 python3 "$project/iso/app-catalog.py" verify /work/repo
 createrepo_c /work/repo
 python3 "$project/iso/profile.py" --check
@@ -90,8 +118,6 @@ set +e
 dnf --releasever=44 --installroot=/work/target --use-host-config \
     --setopt=install_weak_deps=False --setopt=logdir=/work/logs \
     --repofrompath=bookos-candidate,file:///work/repo \
-    --repofrompath=bookos-apps,https://bookos.es/store-files/ \
-    --setopt="bookos-apps.excludepkgs=$remote_exclusions" \
     "${exclusions[@]}" --assumeno install "${packages[@]}" > /work/dependency-resolution.log 2>&1
 status=$?
 set -e
@@ -99,8 +125,8 @@ cat /work/dependency-resolution.log
 if [ "$status" -ne 0 ] && ! grep -Eq 'Operation aborted|Is this ok.*N' /work/dependency-resolution.log; then
     exit "$status"
 fi
-if grep -Eq '^ (konsole|openssh-server|plasma-discover|kwrite|kcalc|kmail|kontact|elisa-player|dragon|bookos-viewer|bookos-voice-recorder)[[:space:]]' /work/dependency-resolution.log; then
-    echo 'Unexpected application in resolved minimal profile' >&2
+if grep -Eq '^ (konsole|openssh-server|plasma-discover|plasma-workspace|sddm|dolphin|kwin|kwrite|kcalc|kmail|kontact|elisa-player|dragon)[[:space:]]' /work/dependency-resolution.log; then
+    echo 'Se ha resuelto un escritorio o aplicación sustituidos por BookOS' >&2
     exit 1
 fi
 # Dos paquetes con la misma ruta y distinto contenido rompen la transacción de
@@ -134,8 +160,6 @@ rm -rf /work/conflict-check
 mkdir -p /work/conflict-check
 dnf --releasever=44 --use-host-config --setopt=logdir=/work/logs \
     --repofrompath=bookos-candidate,file:///work/repo \
-    --repofrompath=bookos-apps,https://bookos.es/store-files/ \
-    --setopt="bookos-apps.excludepkgs=$remote_exclusions" \
     download --destdir=/work/conflict-check "${bookos_packages[@]}"
 python3 "$project/iso/check-file-conflicts.py" /work/conflict-check
 # Keep the resolved transaction (repository and size included) beside the RPMs.

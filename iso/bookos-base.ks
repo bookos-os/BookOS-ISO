@@ -1,5 +1,7 @@
-# BookOS — kickstart base (shared by stable/beta/dev)
-# Builds live ISO that includes BookOS branding + bookos-meta + bookos-desktop.
+# BookOS — kickstart base (shared by stable/beta/dev and by every edition)
+# Builds a live ISO. What the image carries on top of this common part comes
+# from edicion-<completa|minima|servidor>.ks, which profile.py inserts in the
+# «Edición» block below.
 
 # Primary locale = Spanish (BookOS target market): the live session AND the
 # Anaconda installer boot in Spanish. --addsupport keeps extra locales
@@ -10,12 +12,7 @@ keyboard --vckeymap=es --xlayouts='es'
 # (es la única que BookOS Welcome no cubre) por si el usuario está en otra zona.
 timezone Europe/Madrid
 selinux --enforcing
-# SSH is intentionally NOT enabled by default: a consumer laptop OS shouldn't
-# ship a listening sshd / open firewall port on every install. Users who want
-# remote access enable it themselves (systemctl enable --now sshd + open port).
-firewall --enabled --service=mdns
 network --bootproto=dhcp --device=link --activate --onboot=on
-services --enabled=NetworkManager,bluetooth
 
 bootloader --location=mbr --append="rhgb quiet rd.live.image"
 # Live image rootfs sizing for livemedia-creator. This is the SIZE OF THE LIVE
@@ -54,42 +51,17 @@ repo --name=bookos-apps --baseurl=https://bookos.es/store-files/
 # not here, to avoid a duplicate "bookos" repo definition.
 
 # ── Packages ──────────────────────────────────────────────────────────────
+# Lo que lleva toda edición: arranque, instalador, identidad y firma. Cada
+# edicion-*.ks añade su propia %packages; pykickstart las junta en una lista,
+# pero las opciones de la cabecera las decide la ÚLTIMA sección (medido con
+# pykickstart de F44: una segunda sección sin --exclude-weakdeps lo apaga para
+# todas). Por eso todas la repiten, y test_profile lo comprueba.
 # Missing requested packages must fail the compose.
 %packages --exclude-weakdeps
 @core
 @hardware-support
-# Escritorio propio (bookos-desktop). Plasma ya no va en la imagen: el panel,
-# dock, launchpad, bloqueo, red, sonido y Bluetooth los pinta bookos-desktop.
-# kwin se queda solo para bookos-recovery.py, que lo usa de compositor de
-# emergencia si bookos-comp no arranca. polkit-kde es el agente de polkit: el
-# escritorio no trae uno y sin él pkexec (BookOS Settings) no puede pedir clave.
-bookos-desktop
-kwin
-polkit-kde
-power-profiles-daemon
-bluez
 NetworkManager
-NetworkManager-wifi
 firewalld
-pipewire-alsa
-pipewire-pulseaudio
-wireplumber
-pulseaudio-utils
-alsa-utils
-mesa-dri-drivers
-mesa-vulkan-drivers
-xorg-x11-server-Xwayland
-xdg-desktop-portal-gtk
-xdg-utils
-udisks2
-upower
-fprintd-pam
-gnome-keyring
-orca
-at-spi2-core
-qt6-qtwayland
-google-noto-sans-fonts
-google-noto-emoji-color-fonts
 chrony
 sudo
 dnf5
@@ -97,16 +69,11 @@ btrfs-progs
 dosfstools
 e2fsprogs
 cryptsetup
-exfatprogs
-ntfs-3g
 less
 nano
 unzip
 tar
 curl
-gstreamer1-plugins-good
-gstreamer1-plugins-bad-free
-gstreamer1-plugin-libav
 grub2-pc
 grub2-tools
 grub2-tools-minimal
@@ -165,78 +132,12 @@ plymouth-plugin-script
 # Clave de firma + definición de repos. Va PRIMERO: sin ella los repos con
 # gpgcheck=1 no tienen con qué verificar y dnf pediría confirmación de clave.
 bookos-keyring
-# BookOS umbrella package (Requires: pulls everything else)
-bookos-meta
-# Asistente de primer arranque (BookOS Welcome, C++/Qt6, estilo macOS Setup):
-# idioma, teclado, Wi-Fi, cuenta (wheel), huella y tema. La página de cuentas
-# del WebUI va oculta vía perfil. Verificado en el %post --erroronfail final.
-# Sustituye al esqueleto bookos-oobe (rpm/bookos-oobe, ya no se incluye).
-bookos-welcome
-# Missing applications fail dependency resolution. The final post section
-# also validates the resulting rootfs and desktop integration.
-bookos-settings
-bookos-store
-bookos-calc
-bookos-clock
-bookos-notepad
-bookos-shell
-bookos-player
-bookos-new
-bookos-explorer
 bookos-branding
-# Iconos, colores/Kvantum de las apps Qt y tema GTK.
-bookos-icons
-bookos-plasma-theme
-bookos-gtk-theme
-# ServiceMenus de Dolphin (terminal / color de carpeta) y bookos-livestate.
-bookos-desktop-integration
 # Optional apps — substituted by build-iso.sh when "all apps" is requested.
 __BOOKOS_OPTIONAL_APPS__
 
-# ── Samsung Galaxy Book hardware enablement ─────────────────────────────────
-# Fingerprint: libfprint fork with the FMV ETU906AXX-E SPI sensor (Book5 Pro).
-# It Provides/Obsoletes libfprint, so dnf installs it in place of the stock one.
-libfprint-bookos
-# Speakers: MAX98390 HDA DKMS module (Book4/5 Pro/Ultra). Hardware-guarded, so
-# it no-ops on other machines. dkms + kernel-devel + akmods let it build and
-# sign at compose time / on kernel updates; alsa-sof-firmware carries the DSM.
-bookos-galaxybook-audio
-dkms
-kernel-devel
-akmods
-alsa-sof-firmware
-
-# Login y apps KDE que se conservan. Sin plasma-workspace: medido en
-# fedora:44, sddm y dolphin no lo arrastran.
-sddm
-dolphin
-firefox
-kde-partitionmanager
-
-# ── BookOS debloat ──────────────────────────────────────────────────────────
-# Apps/utilidades KDE sustituidas por las de BookOS o innecesarias para el
-# modelo macOS. Solo LEAF packages (apps de hoja, nada de lo que dependa el
-# stack) para no romper la resolución. Dolphin se conserva; Shell es el terminal.
-# Ampliar tras validar que la ISO compone bien.
--plasma-discover              # -> bookos-store
--plasma-discover-notifier
--plasma-welcome                # asistente de bienvenida KDE
--plasma-browser-integration    # integración navegador (bloat)
--plasma-workspace-wallpapers   # solo wallpapers BookOS en el selector
-# OJO: NO excluir plasma-lookandfeel-fedora / f44-backgrounds-* /
-# desktop-backgrounds-compat: sddm y plasma-workspace los REQUIEREN y dnf
-# aborta toda la instalación (build del 4-jul falló por esto). Sus wallpapers
-# y global themes sobrantes se borran igualmente en el %post de abajo.
--kinfocenter                   # info del sistema
--khelpcenter                   # ayuda KDE
--plasma-firewall               # KCM -> cubierto por bookos-settings
--plasma-thunderbolt            # KCM -> cubierto por bookos-settings
-
-# Remote access servers are optional in the minimal image.
--openssh-server
-
-# Anaconda installer for live media install-to-disk
-anaconda
+# Anaconda installer for live media install-to-disk. La interfaz (WebUI o
+# texto) la elige cada edición; anaconda-live arrastra la WebUI igualmente.
 anaconda-live
 anaconda-install-env-deps
 
@@ -247,6 +148,11 @@ anaconda-install-env-deps
 # Once bookos-branding installs from the repo (it Provides system-logos and
 # Conflicts fedora-logos), re-add the exclusions.
 %end
+
+# ── Edición ────────────────────────────────────────────────────────────────
+# Va ANTES de la %post común: lo que la edición cambie en los lanzadores y en
+# /etc/skel tiene que estar hecho cuando esa %post los copia y crea liveuser.
+__BOOKOS_EDITION__
 
 # ── Post-install: branding overrides ──────────────────────────────────────
 %post
@@ -517,12 +423,19 @@ WantedBy=multi-user.target
 UNIT
 systemctl enable bookos-firstboot-update.service 2>/dev/null || true
 
+# ── Escritorio, autologin del live y lanzador del instalador ────────────────
+# El servidor conserva el acceso de consola de edicion-servidor.ks.
+# Sin sangría dentro del if: los heredocs no la admiten.
+if rpm -q --quiet bookos-desktop; then
+# La edición mínima conserva SDDM; la completa usa el greeter propio.
+if rpm -q --quiet sddm; then
 # SDDM default theme (assuming bookos-branding installs theme files)
 mkdir -p /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/bookos-theme.conf <<'EOF'
 [Theme]
 Current=bookos
 EOF
+fi
 
 # Live session auto-login: boot STRAIGHT to the BookOS desktop, no SDDM prompt.
 # (The liveuser password is cleared in the "Live user" block at the end of %post;
@@ -538,6 +451,22 @@ select_live_session() {
     fi
 }
 LIVE_SESSION=$(select_live_session) || exit 1
+if rpm -q --quiet bookos-greeter; then
+# initial_session solo entra una vez por arranque: al salir aparece nuestro greeter.
+cp /etc/greetd/bookos.toml /etc/greetd/bookos-live.toml
+cat >> /etc/greetd/bookos-live.toml <<'EOF'
+
+[initial_session]
+command = "/usr/bin/bookos-session"
+user = "liveuser"
+EOF
+mkdir -p /etc/systemd/system/greetd.service.d
+cat > /etc/systemd/system/greetd.service.d/zz-bookos-live.conf <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/greetd --config /etc/greetd/bookos-live.toml
+EOF
+else
 cat > /etc/sddm.conf.d/zz-live-autologin.conf <<EOF
 [Autologin]
 User=liveuser
@@ -545,6 +474,7 @@ User=liveuser
 Session=${LIVE_SESSION%.desktop}
 Relogin=false
 EOF
+fi
 
 # ── Installer launcher on the live desktop ──────────────────────────────
 # Without livesys-scripts nothing places the "Install to Hard Drive" icon on
@@ -565,40 +495,8 @@ for LAUNCH in /usr/share/applications/liveinst.desktop /usr/share/applications/a
     # KDE: mark executable desktop files as trusted to skip the warning
     kwriteconfig6 --file "$DESK/$(basename "$LAUNCH")" --group "Desktop Entry" --key "X-KDE-AuthorizeExecution" "true" 2>/dev/null || true
 done
-
-# ── Keyboard backlight toggle (Fn+F9) ──────────────────────────────────────
-# Samsung Galaxy Book exposes the keyboard backlight as an LED class device.
-# Writing its `brightness` needs root, so Fn+F9 / the Control Station button do
-# nothing for a normal user. Ship a cycler script, make the sysfs node writable
-# by the `video` group via udev, and bind it to Fn+F9 for new users.
-cat > /usr/libexec/bookos-kbd-backlight <<'SH'
-#!/bin/sh
-# Cycle the keyboard backlight one step (wraps to 0 at max).
-LED=$(ls -d /sys/class/leds/*kbd_backlight 2>/dev/null | head -1)
-[ -n "$LED" ] || exit 0
-MAX=$(cat "$LED/max_brightness")
-CUR=$(cat "$LED/brightness")
-if [ "$CUR" -ge "$MAX" ]; then NEXT=0; else NEXT=$((CUR + 1)); fi
-echo "$NEXT" > "$LED/brightness"
-SH
-chmod +x /usr/libexec/bookos-kbd-backlight
-# udev: make the kbd backlight node writable without root. `uaccess` grants the
-# user of the active graphical session a write ACL (covers the installer-created
-# user regardless of group); the chgrp/chmod to `video` is a fallback for the
-# pre-created liveuser. Re-applied on hotplug.
-cat > /etc/udev/rules.d/90-bookos-kbd-backlight.rules <<'EOF'
-ACTION=="add|change", SUBSYSTEM=="leds", KERNEL=="*kbd_backlight", \
-  TAG+="uaccess", \
-  RUN+="/bin/chgrp video /sys/class/leds/%k/brightness", \
-  RUN+="/bin/chmod g+w /sys/class/leds/%k/brightness"
-EOF
-
-# Terminal por defecto (Dolphin "Abrir terminal", kioclient exec…):
-# el wrapper prefiere bookos-shell y cae a konsole si no está.
-mkdir -p /etc/skel/.config
-if ! grep -q "TerminalApplication" /etc/skel/.config/kdeglobals 2>/dev/null; then
-    printf '\n[General]\nTerminalApplication=bookos-open-terminal.sh\nTerminalService=bookos-terminal.desktop\n' >> /etc/skel/.config/kdeglobals
 fi
+
 # ── Plymouth (splash de arranque) ──────────────────────────────────────────
 # Plymouth NO lee el tema del disco al arrancar: lo lee de DENTRO del initramfs,
 # porque cuando corre todavía no hay raíz montada. Así que hacen falta dos cosas
@@ -698,6 +596,13 @@ for p in ("/etc/anaconda/profile.d/bookos.conf",
     c.read(p, encoding="utf-8")
     if c.has_section("Storage Constraints"):
         c.set("Storage Constraints", "must_not_be_on_root", "")  # (1) /var libre
+    # (1b) /boot y /boot/efi los crea la plataforma como particiones. Si el
+    # perfil los repite, con default_scheme = BTRFS salen como subvolúmenes y la
+    # ESP queda dentro del btrfs, donde el firmware no la ve.
+    if c.has_option("Storage", "default_partitioning"):
+        lineas = c.get("Storage", "default_partitioning").splitlines()
+        c.set("Storage", "default_partitioning", "\n".join(
+            l for l in lineas if not l.strip().startswith("/boot")))
     if not c.has_section("Bootloader"):
         c.add_section("Bootloader")
     c.set("Bootloader", "menu_auto_hide", "False")   # (2a) menú GRUB visible
@@ -765,6 +670,49 @@ WantedBy=multi-user.target
 EOF
 systemctl enable bookos-grub-firstboot.service
 
+# EFI/fedora no es nuestro: cualquier Fedora instalado en el mismo disco usa ese
+# directorio, y su grub.cfg (el stub que dice qué /boot cargar) solo puede
+# apuntar a uno de los dos. Visto en un Book5 Pro con Fedora 44 + BookOS: la
+# entrada UEFI «BookOS» arrancaba el Fedora porque el stub señalaba su /boot.
+# BookOS arranca desde EFI/bookos con copias firmadas de shim y GRUB (el GRUB de
+# Fedora busca grub.cfg primero junto al binario, que es lo que ya permite
+# EFI/BOOT). Las copias se refrescan en cada arranque: grub2-efi-x64 solo
+# actualiza EFI/fedora, y un shim viejo acabaría revocado por SBAT.
+cat > /usr/local/sbin/bookos-efi-sync <<'EFISYNC'
+#!/usr/bin/bash
+set -euo pipefail
+src=/boot/efi/EFI/fedora
+dst=/boot/efi/EFI/bookos
+boot_uuid=$(findmnt -nro UUID --mountpoint /boot)
+[ -n "$boot_uuid" ] || { echo 'no se identifica el UUID de /boot' >&2; exit 1; }
+mkdir -p "$dst"
+for f in shimx64.efi grubx64.efi mmx64.efi; do
+    [ -s "$src/$f" ] || continue
+    cmp -s "$src/$f" "$dst/$f" && continue
+    cp "$src/$f" "$dst/$f.nuevo"
+    mv -f "$dst/$f.nuevo" "$dst/$f"
+done
+stub="search --no-floppy --fs-uuid --set=dev $boot_uuid
+set prefix=(\$dev)/grub2
+export \$prefix
+configfile \$prefix/grub.cfg"
+[ "$(cat "$dst/grub.cfg" 2>/dev/null)" = "$stub" ] || printf '%s\n' "$stub" > "$dst/grub.cfg"
+EFISYNC
+chmod 755 /usr/local/sbin/bookos-efi-sync
+cat > /etc/systemd/system/bookos-efi-sync.service <<'EOF'
+[Unit]
+Description=BookOS: sincronizar shim y GRUB en EFI/bookos
+ConditionKernelCommandLine=!rd.live.image
+ConditionPathIsDirectory=/sys/firmware/efi
+RequiresMountsFor=/boot /boot/efi
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/bookos-efi-sync
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable bookos-efi-sync.service
+
 # ── FIX instalador: limpiar los restos de la sesión LIVE en el sistema ──────
 # liveuser se crea con useradd DENTRO de esta imagen (no en runtime como hace
 # livesys-scripts en Fedora), y la instalación live copia el rootfs TAL CUAL al
@@ -781,6 +729,11 @@ cat > /usr/local/sbin/bookos-live-cleanup <<'EOF'
 #!/bin/sh
 # BookOS: retirar autologin/liveuser/lanzador del instalador tras instalar.
 rm -f /etc/sddm.conf.d/zz-live-autologin.conf
+rm -f /etc/systemd/system/greetd.service.d/zz-bookos-live.conf /etc/greetd/bookos-live.toml
+rm -f /etc/systemd/system/getty@tty1.service.d/zz-bookos-live-autologin.conf
+rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+rm -f /etc/sudoers.d/zz-bookos-live /usr/local/bin/bookos-instalar
+rm -f /etc/profile.d/bookos-live.sh
 # Solo le servía al instalador del live (nombre de producto de Anaconda)
 rm -f /.buildstamp
 rm -f /etc/skel/Desktop/liveinst.desktop /etc/skel/Desktop/anaconda.desktop
@@ -816,7 +769,7 @@ Description=BookOS: limpiar liveuser/autologin en el primer arranque instalado
 ConditionKernelCommandLine=!rd.live.image
 ConditionPathExists=!/var/lib/bookos-live-cleanup.done
 After=local-fs.target
-Before=sddm.service display-manager.service
+Before=greetd.service sddm.service display-manager.service
 
 [Service]
 Type=oneshot
@@ -828,16 +781,6 @@ EOF
 systemctl enable bookos-live-cleanup.service 2>/dev/null || \
     ln -sf /etc/systemd/system/bookos-live-cleanup.service \
         /etc/systemd/system/multi-user.target.wants/bookos-live-cleanup.service
-
-# ── Galaxy Book speakers: pre-build the DKMS module into the image ──────────
-# Build against the kernel shipped in the image (not the build host's running
-# kernel) so the live session and fresh installs have working speakers without
-# a first-boot compile. dkms.service still rebuilds on future kernel updates.
-for KVER in $(ls /lib/modules 2>/dev/null); do
-    [ -e "/lib/modules/$KVER/build" ] || continue
-    dkms install -m max98390-hda -v 1.0 -k "$KVER" 2>/dev/null || true
-done
-systemctl enable dkms.service 2>/dev/null || true
 
 # ── Idioma: forzar español de forma explícita ───────────────────────────────
 # La directiva `lang` de kickstart no siempre llega a la sesión live (livesys
@@ -926,8 +869,16 @@ snapper -c root create-config / 2>/dev/null || true
 
 # Default to the graphical target + SDDM (the `services` line can't enable a
 # display-manager that isn't installed at parse time; do it here instead).
-systemctl set-default graphical.target 2>/dev/null || true
-systemctl enable sddm.service 2>/dev/null || true
+# Sin SDDM (servidor) se queda en consola.
+if rpm -q --quiet bookos-greeter; then
+    systemctl set-default graphical.target
+    systemctl enable --force greetd.service
+elif rpm -q --quiet sddm; then
+    systemctl set-default graphical.target 2>/dev/null || true
+    systemctl enable sddm.service 2>/dev/null || true
+else
+    systemctl set-default multi-user.target
+fi
 
 # ── Live user (created LAST, after /etc/skel is fully populated) ─────────────
 # Doing this here — not via the kickstart `user` directive — means useradd -m
@@ -939,6 +890,21 @@ if ! id liveuser >/dev/null 2>&1; then
     useradd -m -G wheel,audio,video -c "Live User" liveuser
 fi
 passwd -d liveuser 2>/dev/null || true
+# El instalador en modo texto (bookos-instalar, ediciones mínima y servidor)
+# corre con sudo desde un terminal, sin agente de polkit. liveuser no tiene
+# clave, así que sin esto sudo pediría una que no existe. bookos-live-cleanup
+# lo borra en el sistema instalado.
+printf 'liveuser ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/zz-bookos-live
+chmod 0440 /etc/sudoers.d/zz-bookos-live
+# liveinst -T es la vía que propone el propio Anaconda cuando falta RAM para
+# la gráfica (startup_utils.check_memory). En modo texto pide 320 MiB, y la
+# WebUI más Firefox no caben en 512 MB. Como root, liveinst no pasa por
+# pkexec, que sin agente de polkit no tendría a quién pedir permiso.
+cat > /usr/local/bin/bookos-instalar <<'EOF'
+#!/bin/sh
+exec sudo /usr/bin/liveinst -T "$@"
+EOF
+chmod 0755 /usr/local/bin/bookos-instalar
 # useradd copies /etc/skel, but make the final live-home permissions explicit.
 # This also repairs images where the launcher package was mode 0644.
 for launcher in /home/liveuser/Desktop/liveinst.desktop /home/liveuser/Desktop/anaconda.desktop; do
@@ -955,13 +921,16 @@ dnf clean all
 # Verify the composed image as well as successful dependency resolution.
 %post --erroronfail
 set -euo pipefail
-for p in bookos-keyring bookos-meta bookos-branding bookos-desktop bookos-shell \
-         bookos-desktop-integration bookos-settings \
-         bookos-store bookos-welcome bookos-player bookos-calc bookos-clock bookos-notepad \
-         bookos-new bookos-explorer \
-         firefox dolphin kde-partitionmanager grub2-pc grub2-tools grub2-efi-x64 shim-x64 efibootmgr; do
+for p in bookos-keyring bookos-branding \
+         grub2-pc grub2-tools grub2-efi-x64 shim-x64 efibootmgr; do
     rpm -q "$p" >/dev/null 2>&1 || { echo "✗ paquete BookOS crítico ausente: $p (¿sin publicar en el repo?)"; exit 1; }
 done
+# Los %post de la edición van antes del común que habilita el gestor. El
+# enlace solo puede verificarse aquí, cuando esa configuración ha terminado.
+if rpm -q --quiet bookos-greeter; then
+    [ "$(readlink -f /etc/systemd/system/display-manager.service)" = /usr/lib/systemd/system/greetd.service ] \
+        || { echo '✗ greetd no es el gestor de acceso predeterminado'; exit 1; }
+fi
 [ -s /etc/anaconda/profile.d/bookos.conf ] \
     && grep -q '^\[Product\]' /etc/anaconda/profile.d/bookos.conf \
     && grep -q '^product_name[[:space:]]*=[[:space:]]*BookOS$' /etc/anaconda/profile.d/bookos.conf \
@@ -1003,14 +972,8 @@ done
 # del parche del perfil). Se ve solo en el portátil: mejor abortar aquí.
 grep -q '^webui_web_engine = firefox$' /etc/anaconda/profile.d/bookos.conf \
     || { echo "✗ el perfil de Anaconda no fija webui_web_engine = firefox (heredaría slitherer, que no está en la ISO)"; exit 1; }
-
-# bookos-welcome < 1.0.0-4 se queda para siempre en «Gracias» al terminar (su
-# quit() lo rechazaba la ventana de kiosko) y el primer arranque nunca llega a
-# SDDM. El servidor aún sirve la -3: si el repo local no entra en el compose,
-# se colaría sin avisar.
-_welcome="$(rpm -q --qf '%{VERSION}-%{RELEASE}' bookos-welcome)"
-[ "$(printf '%s\n' 1.0.0-4 "${_welcome%%.fc*}" | sort -V | head -n1)" = 1.0.0-4 ] \
-    || { echo "✗ bookos-welcome $_welcome es anterior a 1.0.0-4 (se cuelga en «Gracias»); pon la -4 en el repo local"; exit 1; }
+! sed -n '/^default_partitioning/,/^[^[:space:]]/p' /etc/anaconda/profile.d/bookos.conf | grep -q '/boot' \
+    || { echo "✗ default_partitioning pide /boot: con BTRFS la ESP saldría como subvolumen"; exit 1; }
 
 # El tema gráfico de GRUB (bookos-branding >= 0.6.1-10). Sin él, el post-script
 # de Anaconda no pone GRUB_THEME —la guarda es deliberada— y la ISO saldría
@@ -1028,16 +991,6 @@ _welcome="$(rpm -q --qf '%{VERSION}-%{RELEASE}' bookos-welcome)"
 rpm -q plymouth-plugin-script >/dev/null 2>&1 \
     || { echo "✗ falta plymouth-plugin-script — el tema es ModuleName=script y caería al spinner de Fedora"; exit 1; }
 
-# Minimal profile invariants: fail rather than silently ship duplicate apps.
-for variant in Dark Light Tinted-Dark Tinted-Light; do
-    test -s "/usr/share/bookos/icons/BookOS-Icon-Pack-$variant/index.theme" \
-        || { echo "Missing Settings icon pack: $variant"; exit 1; }
-done
-for p in konsole plasma-discover kwrite kcalc kmail kontact elisa-player dragon openssh-server; do
-    if rpm -q "$p" >/dev/null 2>&1; then
-        echo "Unexpected application in minimal image: $p"; exit 1
-    fi
-done
 if [ -d /usr/share/anaconda/addons/org_bookos_welcome ]; then
     echo "Legacy Btrfs-renaming addon is still installed; rebuild bookos-branding"; exit 1
 fi
@@ -1072,5 +1025,10 @@ test -s "$contexts"
 setfiles -F -m -e /proc -e /sys -e /dev -e /run "$contexts" /
 matchpathcon -V -f "$contexts" \
     /etc/ld.so.cache /usr/bin/udevadm /usr/bin/dbus-broker-launch \
-    /usr/lib/systemd/systemd-resolved /usr/bin/sddm
+    /usr/lib/systemd/systemd-resolved
+if rpm -q --quiet bookos-greeter; then
+    matchpathcon -V -f "$contexts" /usr/bin/greetd /usr/libexec/bookos-greeter /usr/libexec/bookos-cage
+elif rpm -q --quiet sddm; then
+    matchpathcon -V -f "$contexts" /usr/bin/sddm
+fi
 %end

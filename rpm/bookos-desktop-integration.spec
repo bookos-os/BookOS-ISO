@@ -1,9 +1,9 @@
 Name:           bookos-desktop-integration
 Version:        0.6.1
 # Release (no Version) sube con los añadidos: bookos-meta pinea `= %%{version}`.
-Release:        9%{?dist}
+Release:        10%{?dist}
 Summary:        BookOS desktop integration — ServiceMenus (terminal, folder colors), default apps, WebKit env
-License:        GPL-3.0
+License:        LicenseRef-BookOS
 URL:            https://bookos.es/
 BuildArch:      noarch
 # Tarball topdir bookos-desktop-integration-%%{version}/ with:

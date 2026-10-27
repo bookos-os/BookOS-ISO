@@ -4,6 +4,7 @@
 #
 #   bash iso/release.sh <canal> <versión> <notas.md> [--desde N]
 #   bash iso/release.sh dev 0.7.0 notas-0.7.0.md
+#   bash iso/release.sh dev 0.7.1 --solo-iso
 #
 #   1 paquetes     construye apps y paquetes de sistema desde el código
 #   2 firmar       firma los RPM EN LOCAL, antes de meterlos en la ISO
@@ -31,21 +32,40 @@
 #     servidor al registrar la ISO, así la URL del webhook no sale de allí.
 set -euo pipefail
 
-CHANNEL="${1:?uso: $0 <canal> <versión> <notas.md> [--desde N]}"
+CHANNEL="${1:?uso: $0 <canal> <versión> [notas.md] [--solo-iso] [--desde N] [--comprobar]}"
 VERSION="${2:?falta la versión}"
-NOTES="${3:?falta el fichero de notas (markdown, en español)}"
+shift 2
+NOTES=""
 FROM=1
-[[ "${4:-}" == "--desde" ]] && FROM="${5:?falta N}"
+SOLO_ISO=0
+COMPROBAR=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --solo-iso) SOLO_ISO=1; shift ;;
+        --comprobar) COMPROBAR=1; shift ;;
+        --desde) FROM="${2:?falta el número de paso}"; shift 2 ;;
+        --*) echo "✗ opción desconocida: $1" >&2; exit 1 ;;
+        *) [ -z "$NOTES" ] || { echo '✗ solo se admite un fichero de notas' >&2; exit 1; }
+           NOTES="$1"; shift ;;
+    esac
+done
 [[ "$CHANNEL" =~ ^(stable|beta|dev)$ ]] || { echo "✗ canal: stable, beta o dev"; exit 1; }
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[A-Za-z0-9.]+)?$ ]] || { echo "✗ versión no válida: $VERSION"; exit 1; }
-[[ -s "$NOTES" ]] || { echo "✗ no existe o está vacío: $NOTES"; exit 1; }
-NOTES="$(realpath "$NOTES")"
+[[ "$FROM" =~ ^[1-9]$ ]] && { [ "$SOLO_ISO" = 0 ] || [ "$FROM" -le 3 ]; } \
+    || { echo '✗ --desde debe ser un paso 1–9 (1–3 con --solo-iso)' >&2; exit 1; }
+if [ "$SOLO_ISO" = 0 ]; then
+    [[ -s "$NOTES" ]] || { echo "✗ faltan las notas; para construir sin publicar usa --solo-iso"; exit 1; }
+    NOTES="$(realpath "$NOTES")"
+fi
+[ "$(id -u)" != 0 ] || { echo '✗ ejecuta sin sudo; solo la composición pedirá privilegios' >&2; exit 1; }
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$HERE")"
 WEB="$(dirname "$ROOT")/Bookos-web"
-REPO="$ROOT/.build/package-check/repo"
-OUT="$ROOT/.build/release/$VERSION"
+BOOKOS_BUILD_ROOT="$(realpath -m "${BOOKOS_BUILD_ROOT:-$ROOT/.build}")"
+export BOOKOS_BUILD_ROOT
+REPO="$BOOKOS_BUILD_ROOT/package-check/repo"
+OUT="$(realpath -m "${OUTDIR:-$BOOKOS_BUILD_ROOT/release/$VERSION}")"
 ISO="$OUT/bookos-$VERSION-$CHANNEL-x86_64.iso"
 MINISIGN_KEY="${MINISIGN_KEY:-$HOME/.minisign/minisign.key}"
 export MINISIGN_PUBKEY="${MINISIGN_PUBKEY:-$HOME/.minisign/minisign.pub}"
@@ -56,6 +76,44 @@ step() { echo; echo "══ $1 ════════════════�
 ask() { local r; read -rp "$1 [s/N] " r; [[ "$r" =~ ^[sS]$ ]]; }
 run() { [[ "$1" -ge "$FROM" ]]; }
 
+step 'Comprobaciones previas'
+for programa in podman python3 sudo rpm rpmkeys rpmsign createrepo_c gpg rsync; do
+    command -v "$programa" >/dev/null || { echo "✗ falta $programa" >&2; exit 1; }
+done
+python3 "$HERE/app-catalog.py" comprobar "$(dirname "$ROOT")"
+mkdir -p "$BOOKOS_BUILD_ROOT" "$OUT"
+python3 - "$BOOKOS_BUILD_ROOT" "$OUT" "$FROM" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+trabajo, salida = map(Path, sys.argv[1:3])
+# El espacio adicional depende de las cachés y de los archivos dispersos de
+# lorax. Esta estimación sirve de aviso, no demuestra que el build no quepa.
+fase = int(sys.argv[3])
+necesarios = 60 if fase == 1 else 35 if fase <= 4 else 0
+libres = shutil.disk_usage(trabajo).free / 1024**3
+if libres < necesarios:
+    print(f'Aviso: hay {libres:.1f} GiB libres en {trabajo}. '
+          f'El margen estimado sin caché es {necesarios} GiB; se continúa con las cachés disponibles. '
+          'Podman también consume espacio del disco anfitrión.', file=sys.stderr)
+if trabajo.stat().st_dev != salida.stat().st_dev and shutil.disk_usage(salida).free < 10 * 1024**3:
+    print(f'Aviso: hay menos de 10 GiB libres para la ISO en {salida}; se continúa.', file=sys.stderr)
+PY
+podman info >/dev/null
+if run 2; then
+    gpg --list-secret-keys F8D96833E35611130227335A9A8FA3B2E9E0E64F >/dev/null 2>&1 \
+        || { echo '✗ falta la clave privada de firma de BookOS en el llavero del usuario' >&2; exit 1; }
+fi
+if run 3 && { [ -e "$ISO" ] || [ -e "$ISO.minisig" ]; }; then
+    echo "✗ ya existe $ISO; usa OUTDIR para conservar la imagen anterior" >&2
+    exit 1
+fi
+if [ "$COMPROBAR" = 1 ]; then
+    echo "Fuentes y requisitos disponibles. Repositorio: $REPO"
+    echo "Salida prevista: $ISO"
+    exit 0
+fi
+
 if run 1; then
     step "1/9 Construyendo paquetes desde el código"
     bash "$HERE/build-apps-in-podman.sh"
@@ -64,6 +122,22 @@ fi
 
 if run 2; then
     step "2/9 Firmando los RPM en local"
+    if [ -t 0 ]; then
+        GPG_TTY="$(tty)"
+        export GPG_TTY
+        # La compilación puede durar horas y el agente conservar una terminal
+        # antigua. Pedir aquí la clave evita 35 esperas de pinentry caducadas.
+        comprobacion=$(mktemp -d)
+        printf 'Comprobación local de firma de BookOS\n' > "$comprobacion/prueba"
+        echo 'GPG puede pedir la contraseña de la clave de firma en esta terminal.'
+        if ! gpg --pinentry-mode loopback --local-user F8D96833E35611130227335A9A8FA3B2E9E0E64F \
+            --detach-sign --output "$comprobacion/prueba.sig" "$comprobacion/prueba"; then
+            rm -rf -- "$comprobacion"
+            echo '✗ no se ha podido desbloquear la clave; no se intenta firmar el lote de RPM' >&2
+            exit 1
+        fi
+        rm -rf -- "$comprobacion"
+    fi
     bash "$WEB/deploy/sign-and-publish.sh" --solo-firmar "$REPO"
     python3 "$HERE/app-catalog.py" resign "$REPO"
 fi
@@ -71,10 +145,23 @@ fi
 if run 3; then
     step "3/9 Construyendo la ISO"
     mkdir -p "$OUT"
-    sudo OUTDIR="$OUT" bash "$HERE/build-in-podman.sh" "$CHANNEL" "$VERSION"
-    # El contenedor corre como root: sin esto el repo y la ISO quedan de root y
-    # los pasos siguientes, que van con tu usuario, no pueden escribir.
-    sudo chown -R "$(id -u):$(id -g)" "$REPO" "$OUT"
+    bash "$HERE/check-artifacts.sh" rpm "$REPO"/*.rpm
+    sudo env OUTDIR="$OUT" LOCALREPO="$REPO" NO_LOCAL_REPO= WORK="$BOOKOS_BUILD_ROOT/compose" \
+        EDITION=completa SIGN=0 BOOKOS_UID="$(id -u)" BOOKOS_GID="$(id -g)" \
+        bash -ec '
+            bash "$@"
+            # La autenticación de sudo puede caducar durante lorax. Devolver
+            # los archivos al usuario dentro de esta misma sesión de root.
+            chown -R "$BOOKOS_UID:$BOOKOS_GID" "$LOCALREPO" "$OUTDIR"
+        ' -- "$HERE/build-in-podman.sh" "$CHANNEL" "$VERSION"
+fi
+
+if [ "$SOLO_ISO" = 1 ]; then
+    (cd "$OUT" && sha256sum -c "$(basename "$ISO").sha256")
+    cp "$REPO/bookos-apps.json" "$REPO/bookos-fuentes.json" "$OUT/"
+    printf '\nISO para probar en un pendrive: %s\nChecksum: %s.sha256\n' "$ISO" "$ISO"
+    echo 'Graba la imagen en el dispositivo completo con la herramienta de imágenes que uses.'
+    exit 0
 fi
 
 if run 4; then

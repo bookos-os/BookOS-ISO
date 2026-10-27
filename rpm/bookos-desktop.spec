@@ -1,8 +1,11 @@
+# Cargo elimina el debug en release; no hay fuentes de depuración que empaquetar.
+%global debug_package %{nil}
+
 Name:           bookos-desktop
-Version:        0.1.0
-Release:        9%{?dist}
+Version:        0.1.1
+Release:        2%{?dist}
 Summary:        BookOS Rust Wayland compositor and desktop session
-License:        GPL-3.0-or-later
+License:        LicenseRef-BookOS
 URL:            https://github.com/bookos/bookos-desktop
 BuildRequires:  cargo
 BuildRequires:  rust
@@ -16,63 +19,160 @@ BuildRequires:  pipewire-devel
 BuildRequires:  clang-devel
 BuildRequires:  libxkbcommon-devel
 BuildRequires:  wayland-devel
+BuildRequires:  libdisplay-info-devel
+BuildRequires:  meson
+BuildRequires:  ninja-build
+BuildRequires:  pkgconfig(wlroots-0.20)
+BuildRequires:  pkgconfig(wayland-protocols)
 Requires:       xorg-x11-server-Xwayland
 Requires:       libinput
 Requires:       libseat
 Requires:       pipewire
 Requires:       xdg-desktop-portal
 Requires:       xdg-desktop-portal-gtk
-Requires:       /usr/bin/python3
-Requires:       /usr/bin/kwin_wayland
-Requires:       python3-pyside6
 Requires:       fprintd-pam
+# El compositor suena con pw-play y el OSD con canberra-gtk-play. Ninguno de
+# los dos lo pedía nadie: llegaban, o no, por otras dependencias.
+Requires:       /usr/bin/pw-play
+Requires:       /usr/bin/canberra-gtk-play
 BuildArch:      x86_64
 Source0:        bookos-desktop-%{version}.tar.gz
 
 %description
-BookOS native Wayland desktop written in Rust with Smithay and iced. It
-includes the compositor, panel, dock, launcher, lock screen and BookOS session
-entry. Plasma remains available as a compatibility fallback.
+Escritorio Wayland de BookOS con compositor, panel, dock, lanzador, bloqueo
+y servicios propios.
+
+%package -n bookos-greeter
+Summary:        Pantalla de acceso propia de BookOS sobre greetd
+License:        LicenseRef-BookOS AND MIT
+Provides:       user(bookos-greeter)
+Provides:       group(bookos-greeter)
+Requires:       %{name} = %{version}-%{release}
+Requires:       greetd
+Requires:       cage
+Requires:       dbus-daemon
+Requires:       accountsservice
+Requires(pre):  shadow-utils
+
+%description -n bookos-greeter
+Acceso a la sesión BookOS con greetd y Cage con los ajustes de entrada de BookOS.
+
+%package recovery
+Summary:        BookOS session recovery screen
+Requires:       %{name} = %{version}-%{release}
+Requires:       /usr/bin/python3
+Requires:       /usr/bin/kwin_wayland
+Requires:       python3-pyside6
+
+%description recovery
+Recovery screen shown under KWin when the BookOS compositor fails to start:
+retry BookOS or open another installed session.
 
 %prep
 %setup -q
 
 %build
-cargo build --release --workspace --package bookos-comp --package bookos-system
+cargo build --release --locked --package bookos-comp --package bookos-system --package bookos-budsd --package bookos-greeter
+meson setup build-cage bookos-cage --buildtype=release -Dman-pages=disabled
+ninja -C build-cage
 
 %install
 install -Dm755 target/release/bookos-comp %{buildroot}%{_libexecdir}/bookos-comp
 install -Dm755 target/release/bookos-system %{buildroot}%{_libexecdir}/bookos-system
+install -Dm755 target/release/bookos-budsd %{buildroot}%{_libexecdir}/bookos-budsd
 install -Dm755 session/bookos-session %{buildroot}%{_bindir}/bookos-session
 install -Dm644 session/bookos-recovery.py %{buildroot}%{_libexecdir}/bookos-recovery.py
 install -Dm644 session/bookos.pam %{buildroot}%{_sysconfdir}/pam.d/bookos
 install -Dm644 session/bookos-fingerprint.pam %{buildroot}%{_sysconfdir}/pam.d/bookos-fingerprint
 install -Dm644 session/bookos.desktop %{buildroot}%{_datadir}/wayland-sessions/bookos.desktop
 install -Dm644 session/bookos-system.service %{buildroot}%{_prefix}/lib/systemd/user/bookos-system.service
+install -Dm644 session/bookos-budsd.service %{buildroot}%{_prefix}/lib/systemd/user/bookos-budsd.service
+install -Dm644 session/org.bookos.Buds.service %{buildroot}%{_datadir}/dbus-1/services/org.bookos.Buds.service
 install -Dm644 session/bookos-session.target %{buildroot}%{_prefix}/lib/systemd/user/bookos-session.target
 # Activación por D-Bus: sin este fichero, quien llame a org.bookos.System1
 # antes de que la sesión arranque la unidad se queda sin servicio.
 install -Dm644 session/org.bookos.System1.service %{buildroot}%{_datadir}/dbus-1/services/org.bookos.System1.service
 install -Dm644 session/bookos.portal %{buildroot}%{_datadir}/xdg-desktop-portal/portals/bookos.portal
-install -Dm644 session/bookos-portals.conf %{buildroot}%{_datadir}/xdg-desktop-portal/BookOS-portals.conf
+install -Dm644 session/bookos-portals.conf %{buildroot}%{_datadir}/xdg-desktop-portal/bookos-portals.conf
 install -Dm644 session/70-bookos-camara.rules %{buildroot}%{_prefix}/lib/udev/rules.d/70-bookos-camara.rules
+install -Dm644 session/71-bookos-serie.rules %{buildroot}%{_prefix}/lib/udev/rules.d/71-bookos-serie.rules
+install -Dm755 target/release/bookos-greeter %{buildroot}%{_libexecdir}/bookos-greeter
+install -Dm755 build-cage/cage %{buildroot}%{_libexecdir}/bookos-cage
+install -Dm644 bookos-cage/LICENSE %{buildroot}%{_licensedir}/bookos-greeter/LICENSE.Cage
+install -Dm755 session/greeter/bookos-greeter-start %{buildroot}%{_libexecdir}/bookos-greeter-start
+sed -i 's|/usr/local/libexec/|/usr/libexec/|g; s|/usr/local/bin/bookos-session|/usr/bin/bookos-session|g' \
+    %{buildroot}%{_libexecdir}/bookos-greeter-start
+install -Dm644 session/greeter/bookos.toml %{buildroot}%{_sysconfdir}/greetd/bookos.toml
+sed -i 's|/usr/local/libexec/|/usr/libexec/|g' %{buildroot}%{_sysconfdir}/greetd/bookos.toml
+install -Dm644 session/greeter/50-bookos-greeter.rules %{buildroot}%{_datadir}/polkit-1/rules.d/50-bookos-greeter.rules
+install -dm755 %{buildroot}%{_prefix}/lib/systemd/system/greetd.service.d
+cat > %{buildroot}%{_prefix}/lib/systemd/system/greetd.service.d/bookos.conf <<'UNIT'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/greetd --config /etc/greetd/bookos.toml
+UNIT
+install -d -m 1777 %{buildroot}/var/lib/bookos/apariencia
+install -d -m 0755 %{buildroot}/var/lib/bookos-greeter
+
+%pre -n bookos-greeter
+getent group bookos-greeter >/dev/null || groupadd --system bookos-greeter
+getent passwd bookos-greeter >/dev/null || useradd --system --gid bookos-greeter \
+    --home-dir /var/lib/bookos-greeter --shell /usr/sbin/nologin bookos-greeter
 
 %files
 %config(noreplace) %{_sysconfdir}/pam.d/bookos
 %config(noreplace) %{_sysconfdir}/pam.d/bookos-fingerprint
 %{_libexecdir}/bookos-comp
 %{_libexecdir}/bookos-system
+%{_libexecdir}/bookos-budsd
 %{_bindir}/bookos-session
-%{_libexecdir}/bookos-recovery.py
 %{_datadir}/wayland-sessions/bookos.desktop
 %{_prefix}/lib/systemd/user/bookos-system.service
+%{_prefix}/lib/systemd/user/bookos-budsd.service
 %{_prefix}/lib/systemd/user/bookos-session.target
 %{_datadir}/dbus-1/services/org.bookos.System1.service
+%{_datadir}/dbus-1/services/org.bookos.Buds.service
 %{_datadir}/xdg-desktop-portal/portals/bookos.portal
-%{_datadir}/xdg-desktop-portal/BookOS-portals.conf
+%{_datadir}/xdg-desktop-portal/bookos-portals.conf
 %{_prefix}/lib/udev/rules.d/70-bookos-camara.rules
+%{_prefix}/lib/udev/rules.d/71-bookos-serie.rules
+
+%files recovery
+%{_libexecdir}/bookos-recovery.py
+
+%files -n bookos-greeter
+%license %{_licensedir}/bookos-greeter/LICENSE.Cage
+%{_libexecdir}/bookos-greeter
+%{_libexecdir}/bookos-cage
+%{_libexecdir}/bookos-greeter-start
+%config(noreplace) %{_sysconfdir}/greetd/bookos.toml
+%{_datadir}/polkit-1/rules.d/50-bookos-greeter.rules
+%{_prefix}/lib/systemd/system/greetd.service.d/bookos.conf
+%attr(1777,root,root) %dir /var/lib/bookos/apariencia
+%attr(0755,bookos-greeter,bookos-greeter) %dir /var/lib/bookos-greeter
 
 %changelog
+* Mon Oct 26 2026 BookOS <packages@bookos.es> - 0.1.1-2
+- Sin nodo de render (modo básico, simpledrm) se repinta la pantalla entera
+  en cada fotograma: la edad de los buffers no se cumple y quedaba gris.
+
+* Mon Oct 26 2026 BookOS <packages@bookos.es> - 0.1.1-1
+- Compila el escritorio actual y empaqueta el acceso propio con Cage parcheado.
+
+* Thu Oct 22 2026 BookOS <packages@bookos.es> - 0.1.0-12
+- bookos-comp --kiosko <programa>: una sola aplicación a pantalla completa, sin
+  shell, atajos (salvo cambiar de TTY) ni gestos, que sigue la distribución de
+  systemd-localed y termina con el código del programa. Lo usa bookos-welcome
+  en el primer arranque en lugar de kwin_wayland.
+* Tue Oct 20 2026 BookOS <packages@bookos.es> - 0.1.0-11
+- La pantalla de recuperación pasa a bookos-desktop-recovery: KWin y PySide6
+  dejan de ser obligatorios para la sesión.
+
+* Fri Oct 09 2026 BookOS <packages@bookos.es> - 0.1.0-10
+- Sonidos del tema bookos (con freedesktop de reserva) y sonidos al bloquear,
+  desbloquear, capturar e iniciar sesión, desactivables con sonidos_interfaz.
+- Pide pw-play y canberra-gtk-play, con los que suena.
+
 * Tue Sep 29 2026 BookOS <packages@bookos.es> - 0.1.0-9
 - Aviso en pantalla al bloquear o desbloquear la cámara del Galaxy Book: una
   regla de udev deja al usuario de la sesión leer el interruptor de su tapa.

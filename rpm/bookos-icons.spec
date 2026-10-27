@@ -2,7 +2,7 @@ Name:           bookos-icons
 Version:        0.6.1
 Release:        3%{?dist}
 Summary:        BookOS icon themes (Dark, Light, Tinted-Dark, Tinted-Light)
-License:        GPL-3.0
+License:        LicenseRef-BookOS AND CC-BY-SA-4.0
 URL:            https://bookos.es/
 BuildArch:      noarch
 # Tarball topdir bookos-icons-%{version}/ holding the BookOS-Icon-Pack-* dirs.
