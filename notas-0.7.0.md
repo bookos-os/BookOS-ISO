@@ -2,7 +2,7 @@
 
 ## Novedades
 
-- **Escritorio BookOS de serie.** El panel, el dock, el launchpad, la pantalla de bloqueo y los gestos del touchpad los dibuja ahora el escritorio de BookOS. Plasma ya no viene incluido, así que el sistema es más ligero y arranca sin pantalla de carga.
+- **BookUI de serie.** El panel, el dock, el launchpad, la pantalla de bloqueo y los gestos del touchpad los dibuja ahora BookUI, el escritorio de BookOS. Plasma ya no viene incluido, así que el sistema es más ligero y arranca sin pantalla de carga.
 - **Actualizaciones sin preguntas.** Todos los paquetes van firmados, y la clave de BookOS viene dentro de la ISO. `dnf` comprueba cada paquete en silencio y solo avisa si algo no cuadra.
 - **ISO firmada.** Cada imagen incluye su firma minisign, para que puedas comprobar que es la oficial.
 

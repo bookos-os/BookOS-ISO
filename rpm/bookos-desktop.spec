@@ -50,7 +50,6 @@ Provides:       group(bookos-greeter)
 Requires:       %{name} = %{version}-%{release}
 Requires:       greetd
 Requires:       cage
-Requires:       dbus-daemon
 Requires:       accountsservice
 Requires(pre):  shadow-utils
 
@@ -72,7 +71,7 @@ retry BookOS or open another installed session.
 %setup -q
 
 %build
-cargo build --release --locked --package bookos-comp --package bookos-system --package bookos-budsd --package bookos-greeter
+cargo build --release --locked --package bookos-comp --package bookos-system --package bookos-budsd --package bookos-greeter --package bookos-pam-huella
 meson setup build-cage bookos-cage --buildtype=release -Dman-pages=disabled
 ninja -C build-cage
 
@@ -103,6 +102,9 @@ install -Dm755 session/greeter/bookos-greeter-start %{buildroot}%{_libexecdir}/b
 sed -i 's|/usr/local/libexec/|/usr/libexec/|g; s|/usr/local/bin/bookos-session|/usr/bin/bookos-session|g' \
     %{buildroot}%{_libexecdir}/bookos-greeter-start
 install -Dm644 session/greeter/bookos.toml %{buildroot}%{_sysconfdir}/greetd/bookos.toml
+# Contraseña o huella a la vez en el greeter (ver session/greeter/README.md).
+install -Dm755 target/release/libpam_bookos_huella.so %{buildroot}%{_libdir}/security/pam_bookos_huella.so
+install -Dm644 session/greeter/bookos-greetd.pam %{buildroot}%{_sysconfdir}/pam.d/bookos-greetd
 sed -i 's|/usr/local/libexec/|/usr/libexec/|g' %{buildroot}%{_sysconfdir}/greetd/bookos.toml
 install -Dm644 session/greeter/50-bookos-greeter.rules %{buildroot}%{_datadir}/polkit-1/rules.d/50-bookos-greeter.rules
 install -dm755 %{buildroot}%{_prefix}/lib/systemd/system/greetd.service.d
@@ -144,6 +146,8 @@ getent passwd bookos-greeter >/dev/null || useradd --system --gid bookos-greeter
 %license %{_licensedir}/bookos-greeter/LICENSE.Cage
 %{_libexecdir}/bookos-greeter
 %{_libexecdir}/bookos-cage
+%{_libdir}/security/pam_bookos_huella.so
+%config(noreplace) %{_sysconfdir}/pam.d/bookos-greetd
 %{_libexecdir}/bookos-greeter-start
 %config(noreplace) %{_sysconfdir}/greetd/bookos.toml
 %{_datadir}/polkit-1/rules.d/50-bookos-greeter.rules

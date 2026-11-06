@@ -33,7 +33,7 @@ APPS = (
 )
 
 GPUI = {'explorer': 'GPUI', 'bookos-notepad': 'GPUI', 'system-monitor': 'GPUI',
-        'fonts': '.', 'atmos': 'GPUI'}
+        'fonts': '.', 'atmos': 'GPUI', 'BookOS-New': 'GPUI'}
 COMPARTIDAS = ('plantilla-gpui',)
 
 

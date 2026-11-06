@@ -40,7 +40,14 @@ reboot --eject
 # errors: "repo can only be used within the url install method".
 url --mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=fedora-$releasever&arch=$basearch
 repo --name=fedora --mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=fedora-$releasever&arch=$basearch
-repo --name=updates --mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=updates-released-f$releasever&arch=$basearch
+# El id NO puede ser `updates` (ni ningún otro que exista en /etc/yum.repos.d
+# del contenedor de build). Anaconda 44.30 lee esos repos, los desactiva, y si
+# el kickstart repite un id solo lo reconfigura sin volver a activarlo
+# (dnf_manager.py, _configure_repository solo llama a disable()). Con
+# `--name=updates` la 0.7.1 salió entera de los paquetes GA de marzo: kernel
+# 6.19.10-300, glibc 2.43-2, linux-firmware 20260309. Por la misma razón el
+# `repo --name=fedora` de arriba no hace nada; los paquetes GA llegan por `url`.
+repo --name=bookos-fedora-updates --mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=updates-released-f$releasever&arch=$basearch
 repo --name=rpmfusion-free --mirrorlist=https://mirrors.rpmfusion.org/metalink?repo=free-fedora-$releasever&arch=$basearch
 # BookOS apps (calc, clock, notepad, settings, store…) live in the store-files
 # repo. They must be available AT INSTALL TIME — bookos-meta Requires them — so
@@ -79,6 +86,12 @@ grub2-tools
 grub2-tools-minimal
 kernel
 kernel-modules-extra
+# linux-firmware es solo Recommends de kernel-core y --exclude-weakdeps lo deja
+# fuera. En F44 GA el GuC/HuC/GSC de Lunar Lake (xe/lnl_*.bin) vive aquí y no
+# en intel-gpu-firmware: sin él, xe retira el framebuffer de la firmware, falla
+# al cargar el GuC y el Galaxy Book se queda en negro (ni splash ni consola)
+# en cuanto se elige «Start BookOS».
+linux-firmware
 # ── Languages ───────────────────────────────────────────────────────────────
 # Ship English + Spanish so the installer and the live session can switch
 # language (and KDE/apps show translated UI). langpacks-XX pull the matching
@@ -851,6 +864,8 @@ fi
 # Snapper: create the root config so pre/post snapshots work out of the box.
 # (|| true: harmless if the subvolume layout already has it.)
 snapper -c root create-config / 2>/dev/null || true
+# Sin este temporizador los puntos no caducan: NUMBER_LIMIT no lo aplica nadie más.
+systemctl enable snapper-cleanup.timer
 # OJO — aquí había un `systemctl enable grub-btrfsd` y un grub2-mkconfig para
 # que grub-btrfs añadiera un submenú «BookOS snapshots». Las dos líneas eran
 # código muerto y se han quitado (2026-08-11):
@@ -990,6 +1005,11 @@ grep -q '^webui_web_engine = firefox$' /etc/anaconda/profile.d/bookos.conf \
     || { echo "✗ falta el tema de Plymouth de BookOS en el branding"; exit 1; }
 rpm -q plymouth-plugin-script >/dev/null 2>&1 \
     || { echo "✗ falta plymouth-plugin-script — el tema es ModuleName=script y caería al spinner de Fedora"; exit 1; }
+
+# Se mira el fichero y no el paquete: el GuC de Lunar Lake ya pasó de
+# linux-firmware a intel-gpu-firmware entre 20260309 y 20261019.
+[ -f /usr/lib/firmware/xe/lnl_guc_70.bin.xz ] \
+    || { echo "✗ falta xe/lnl_guc_70.bin — en Lunar Lake xe no arranca y la pantalla se queda en negro"; exit 1; }
 
 if [ -d /usr/share/anaconda/addons/org_bookos_welcome ]; then
     echo "Legacy Btrfs-renaming addon is still installed; rebuild bookos-branding"; exit 1
