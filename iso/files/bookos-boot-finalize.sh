@@ -27,8 +27,18 @@ set_kv GRUB_TERMINAL_OUTPUT '"gfxterm"'
 # para firmware que solo exponga un modo GOP.
 set_kv GRUB_GFXMODE 1920x1200,1920x1080,1680x1050,1440x900,1280x800,1024x768,800x600,auto
 set_kv GRUB_GFXPAYLOAD_LINUX keep
-if [ -f /boot/grub2/themes/bookos/theme.txt ]; then
-    set_kv GRUB_THEME '"/boot/grub2/themes/bookos/theme.txt"'
+tema=/boot/grub2/themes/bookos/theme.txt
+# Esa lista no basta en el Book5 Pro: su firmware solo da el modo nativo
+# (2880x1800) y el tema de 1x salía diminuto. Con un panel interno de 2560 px
+# o más se usa el tema al doble a resolución nativa. El ancho sale del primer
+# modo del eDP, que es el preferido.
+ancho=$(head -qn1 /sys/class/drm/card*-eDP-*/modes 2>/dev/null | head -n1 | cut -dx -f1)
+if [ "${ancho:-0}" -ge 2560 ] && [ -f /boot/grub2/themes/bookos/hidpi/theme.txt ]; then
+    tema=/boot/grub2/themes/bookos/hidpi/theme.txt
+    set_kv GRUB_GFXMODE auto
+fi
+if [ -f "$tema" ]; then
+    set_kv GRUB_THEME "\"$tema\""
 fi
 
 # Check the ESP before regenerating anything. An empty directory is not an ESP.

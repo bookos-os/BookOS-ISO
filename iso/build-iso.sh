@@ -215,7 +215,15 @@ open(p, "w").write(s.replace(anchor, add))
 PY
 done
 
-_THEME_PREAMBLE='insmod gfxterm\ninsmod gfxmenu\ninsmod png\nif [ -f ($root)/boot/grub2/themes/bookos/theme.txt ]; then\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-20.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-20-b.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-16.pf2\n  set theme=($root)/boot/grub2/themes/bookos/theme.txt\n  export theme\n  terminal_output gfxterm\nfi\n'
+#    Sin gfxmode GRUB usa `auto`, que en EFI es el modo nativo del panel: en la
+#    ISO 0.7.1 el menú del USB salía a 2880x1800 en el Galaxy Book, con la
+#    tipografía de 20 px a un tercio del tamaño previsto. Se usa la misma lista
+#    que el sistema instalado, leída de bookos-boot-finalize.sh para que no haya
+#    dos copias que diverjan. Tiene que ir antes de `terminal_output gfxterm`,
+#    que es quien fija el modo.
+_GFXMODE=$(sed -n 's/^set_kv GRUB_GFXMODE //p' "$SCRIPT_DIR/files/bookos-boot-finalize.sh")
+[ -n "$_GFXMODE" ] || { echo "✗ bookos-boot-finalize.sh ya no fija GRUB_GFXMODE: el menú del USB saldría a resolución nativa"; exit 1; }
+_THEME_PREAMBLE='insmod gfxterm\ninsmod gfxmenu\ninsmod png\nif [ -f ($root)/boot/grub2/themes/bookos/theme.txt ]; then\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-20.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-20-b.pf2\n  loadfont ($root)/boot/grub2/themes/bookos/bookos-16.pf2\n  set theme=($root)/boot/grub2/themes/bookos/theme.txt\n  export theme\n  set gfxmode='"$_GFXMODE"'\n  terminal_output gfxterm\nfi\n'
 for _cfg in "$LORAX_TPL"/live/config_files/x86/grub2-bios.cfg \
             "$LORAX_TPL"/live/config_files/x86/grub2-efi.cfg; do
     [ -f "$_cfg" ] || continue

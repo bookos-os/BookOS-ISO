@@ -1,7 +1,7 @@
 Name:           bookos-desktop-integration
 Version:        0.6.1
 # Release (no Version) sube con los añadidos: bookos-meta pinea `= %%{version}`.
-Release:        10%{?dist}
+Release:        11%{?dist}
 Summary:        BookOS desktop integration — ServiceMenus (terminal, folder colors), default apps, WebKit env
 License:        LicenseRef-BookOS
 URL:            https://bookos.es/
@@ -47,10 +47,9 @@ install -m644 servicemenus/*.desktop        %{buildroot}%{_datadir}/kio/servicem
 install -Dm644 applications/bookos-terminal.desktop %{buildroot}%{_datadir}/applications/bookos-terminal.desktop
 install -Dm644 xdg/mimeapps.list %{buildroot}/etc/xdg/mimeapps.list
 
-# WebKitGTK/Wayland: sin esto las apps Tauri mueren con "Error 71" (DMABUF)
-install -Dm644 environment/60-bookos-webkit.conf %{buildroot}%{_prefix}/lib/environment.d/60-bookos-webkit.conf
-install -dm755 %{buildroot}/etc/profile.d
-printf 'export WEBKIT_DISABLE_DMABUF_RENDERER=1\n' > %{buildroot}/etc/profile.d/bookos-webkit.sh
+# Sin WEBKIT_DISABLE_DMABUF_RENDERER global: con WebKitGTK 2.54 en Intel LNL
+# la ventana sale negra y solo repinta bajo el cursor (medido en bookos-calc,
+# ver su main.rs). El "Error 71" que lo motivó era de versiones viejas.
 
 # Limpieza de restos live (liveuser/autologin) en instalaciones EXISTENTES:
 # unidad firstboot que llega vía dnf update; no corre en la sesión live
@@ -73,8 +72,6 @@ ln -sf %{_prefix}/lib/systemd/system/bookos-live-cleanup.service \
     /etc/systemd/system/multi-user.target.wants/bookos-live-cleanup.service 2>/dev/null || :
 
 %files
-%{_prefix}/lib/environment.d/60-bookos-webkit.conf
-/etc/profile.d/bookos-webkit.sh
 %{_bindir}/bookos-open-terminal.sh
 %{_bindir}/bookos-folder-color.sh
 %{_datadir}/kio/servicemenus/bookos-open-terminal.desktop
@@ -84,6 +81,12 @@ ln -sf %{_prefix}/lib/systemd/system/bookos-live-cleanup.service \
 %{_datadir}/applications/bookos-terminal.desktop
 %config(noreplace) /etc/xdg/mimeapps.list
 %changelog
+* Sun Nov 15 2026 BookOS <josrebe333@gmail.com> - 0.6.1-11
+- Fuera WEBKIT_DISABLE_DMABUF_RENDERER global: dejaba las apps Tauri en
+  negro y repintando solo bajo el cursor.
+- bookos-live-cleanup no se marca hecho mientras liveuser sea la única cuenta:
+  la crea Bienvenida después y liveuser se quedaba en el greeter.
+
 * Thu Sep 24 2026 BookOS <josrebe333@gmail.com> - 0.6.1-9
 - Fuera runners de KRunner, libinput-gestures y Live States (solo Plasma).
 - Fuera la regla que hacía legible el número de serie y la de acceso a

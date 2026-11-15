@@ -206,6 +206,17 @@ class EditionTests(unittest.TestCase):
         self.assertIn("cockpit.socket", handler.services.enabled)
         self.assertTrue({"ssh", "cockpit"} <= set(handler.firewall.services))
 
+    def test_los_fragmentos_de_post_instalacion_llegan_a_interactive_defaults(self):
+        # Anaconda 44.30 no ejecuta post-scripts/*.ks; solo el kickstart que lee
+        # al arrancar. Un fragmento escrito después del volcado no correría.
+        for edition in profile.EDITIONS:
+            with self.subTest(edition=edition):
+                raw = profile.render(edition=edition)
+                volcado = raw.index("cat /usr/share/anaconda/post-scripts/*.ks >> /usr/share/anaconda/interactive-defaults.ks")
+                fragmentos = [m.start() for m in re.finditer(r"^\} > /usr/share/anaconda/post-scripts/", raw, re.M)]
+                self.assertGreaterEqual(len(fragmentos), 3 if edition == "servidor" else 2)
+                self.assertLess(max(fragmentos), volcado)
+
     def test_live_cleanup_removes_passwordless_sudo_and_autologin(self):
         raw = profile.render(edition="servidor")
         script = re.search(r"^cat > /usr/local/sbin/bookos-live-cleanup <<'EOF'\n(.*?)^EOF$", raw, re.M | re.S).group(1)

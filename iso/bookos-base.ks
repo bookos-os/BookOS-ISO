@@ -406,7 +406,7 @@ install -d -m755 /var/lib/bookos
 if dnf -y --refresh --setopt='*.skip_if_unavailable=False' upgrade; then
     date -u +%FT%TZ > "$STAMP"
 else
-    echo 'BookOS first-boot update failed; retrying on the next boot' >&2
+    echo 'BookOS first-boot update failed; systemd lo reintenta en 5 min' >&2
     exit 1
 fi
 exit 0
@@ -428,6 +428,11 @@ After=dnf-makecache.service
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/bookos/firstboot-update
+# NetworkManager-wait-online va desactivado, así que network-online llega
+# antes que la IP: en VirtualBox, 2 s antes del DHCP, y dnf fallaba con
+# «Could not resolve host» en cada arranque. Se reintenta en la misma sesión.
+Restart=on-failure
+RestartSec=5min
 Nice=10
 IOSchedulingClass=idle
 
@@ -616,6 +621,13 @@ for p in ("/etc/anaconda/profile.d/bookos.conf",
         lineas = c.get("Storage", "default_partitioning").splitlines()
         c.set("Storage", "default_partitioning", "\n".join(
             l for l in lineas if not l.strip().startswith("/boot")))
+    # (1c) El perfil fijaba activatable_modules con la lista de un Anaconda
+    # anterior al módulo Runtime, que es quien ejecuta hoy los %post. Fuera de
+    # la lista, el boss no le reparte el kickstart y la instalación termina
+    # «bien» sin haber corrido bookos-boot-finalize ni bookos-live-cleanup
+    # (medido en QEMU con la 0.7.1: «There are no kickstart data» para ocho
+    # módulos y Runtime ni aparece). Se hereda el comodín de anaconda.conf.
+    c.remove_option("Anaconda", "activatable_modules")
     if not c.has_section("Bootloader"):
         c.add_section("Bootloader")
     c.set("Bootloader", "menu_auto_hide", "False")   # (2a) menú GRUB visible
@@ -760,7 +772,10 @@ if id liveuser >/dev/null 2>&1; then
         userdel -r liveuser 2>/dev/null || userdel liveuser 2>/dev/null || true
         rm -rf /home/liveuser
     else
+        # La cuenta la crea Bienvenida en el primer arranque, después de esto:
+        # sin marca, se repite en cada arranque hasta que exista y se borra.
         passwd -l liveuser 2>/dev/null || true
+        exit 0
     fi
 fi
 touch /var/lib/bookos-live-cleanup.done
@@ -774,6 +789,25 @@ chmod 755 /usr/local/sbin/bookos-live-cleanup
     printf '%s\n' '/usr/local/sbin/bookos-live-cleanup || true'
     printf '%s\n' '%end'
 } > /usr/share/anaconda/post-scripts/zz-bookos-live-cleanup.ks
+# Anaconda etiqueta el btrfs como <producto>_<hostname> (bookos_book5_pro en el
+# Book5 Pro) y no hay opción en el perfil para cambiarlo. fstab y GRUB van por
+# UUID, así que la etiqueta solo es el nombre que enseñan Archivos y el gestor
+# de particiones.
+{
+    printf '%s\n' '%post'
+    printf '%s\n' '[ "$(findmnt -no FSTYPE /)" = btrfs ] && btrfs filesystem label / BookOS || true'
+    printf '%s\n' '%end'
+} > /usr/share/anaconda/post-scripts/zz-bookos-etiqueta.ks
+# Anaconda 44.30 YA NO ejecuta post-scripts/*.ks: los %post los corre el módulo
+# Runtime con el kickstart que recibió al arrancar, y appendPostScripts solo
+# los añade al ksdata del proceso principal, que nadie ejecuta. Medido con la
+# ISO 0.7.1 en QEMU/OVMF: instalación «completa», sin
+# /var/log/bookos-boot-finalize.log, sin EFI/bookos, la entrada UEFI apuntando
+# a EFI\fedora y liveuser todavía en el disco. El kickstart que sí lee en un
+# live es interactive-defaults.ks (startup_utils.find_kickstart), así que los
+# fragmentos se vuelcan ahí, en el mismo orden alfabético que tenían. Va aquí
+# porque el %post de la edición, que puede dejar el suyo, ya ha corrido.
+cat /usr/share/anaconda/post-scripts/*.ks >> /usr/share/anaconda/interactive-defaults.ks
 # Vía 2 (respaldo): primer arranque instalado, ANTES del display manager para
 # que SDDM nunca llegue a autologuear a liveuser.
 cat > /etc/systemd/system/bookos-live-cleanup.service <<'EOF'
@@ -833,9 +867,11 @@ mkdir -p /etc/systemd/journald.conf.d
 printf '[Journal]\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/bookos.conf
 
 # Solo wallpapers BookOS en el selector: borra los stock que queden (restos
-# de Fedora).
+# de Fedora). `BookOS` a secas es la carpeta {Light,Dark} de la que tira el
+# compositor (fondo.rs); con solo `BookOS-*` se borraba y el escritorio
+# arrancaba sin fondo.
 for w in /usr/share/wallpapers/*; do
-    case "$(basename "$w")" in BookOS-*) ;; *) rm -rf "$w";; esac
+    case "$(basename "$w")" in BookOS|BookOS-*) ;; *) rm -rf "$w";; esac
 done
 
 # Update icon cache after BookOS icons installed
@@ -915,9 +951,16 @@ chmod 0440 /etc/sudoers.d/zz-bookos-live
 # la gráfica (startup_utils.check_memory). En modo texto pide 320 MiB, y la
 # WebUI más Firefox no caben en 512 MB. Como root, liveinst no pasa por
 # pkexec, que sin agente de polkit no tendría a quién pedir permiso.
+#
+# PKEXEC_UID: sudo borra DBUS_SESSION_BUS_ADDRESS y Anaconda, al inhibir el
+# salvapantallas, cae a dbus-launch, que no está en la imagen → GLib.GError sin
+# capturar y el instalador no llega a abrirse (reproducido en la ISO 0.7.1).
+# Conservar la variable no basta: el bus del usuario rechaza a root. Con
+# PKEXEC_UID liveinst recupera el entorno de la sesión y Anaconda habla con el
+# bus como ese usuario (screensaver.py, SetEuidFromPkexec), igual que por pkexec.
 cat > /usr/local/bin/bookos-instalar <<'EOF'
 #!/bin/sh
-exec sudo /usr/bin/liveinst -T "$@"
+exec sudo PKEXEC_UID="$(id -u)" /usr/bin/liveinst -T "$@"
 EOF
 chmod 0755 /usr/local/bin/bookos-instalar
 # useradd copies /etc/skel, but make the final live-home permissions explicit.
@@ -979,14 +1022,16 @@ for f in /usr/libexec/bookos-apply-identity \
          /usr/local/sbin/bookos-boot-finalize; do
     [ -x "$f" ] || { echo "✗ falta $f — bookos-branding es anterior a 0.6.1-8; publícalo antes de construir la ISO"; exit 1; }
 done
-[ -s /usr/share/anaconda/post-scripts/zz-bookos-boot.ks ] \
-    || { echo 'Missing Anaconda boot-finalization fragment'; exit 1; }
+grep -qx '/usr/local/sbin/bookos-boot-finalize' /usr/share/anaconda/interactive-defaults.ks \
+    || { echo '✗ interactive-defaults.ks no lleva bookos-boot-finalize: Anaconda no lo ejecutaría al instalar'; exit 1; }
 
 # Si el WebUI apunta a un navegador que no está en la imagen, «Instalar en el
 # disco duro» no abre nada y bloquea los siguientes intentos (ver el punto (4)
 # del parche del perfil). Se ve solo en el portátil: mejor abortar aquí.
 grep -q '^webui_web_engine = firefox$' /etc/anaconda/profile.d/bookos.conf \
     || { echo "✗ el perfil de Anaconda no fija webui_web_engine = firefox (heredaría slitherer, que no está en la ISO)"; exit 1; }
+! grep -q '^activatable_modules' /etc/anaconda/profile.d/bookos.conf \
+    || { echo "✗ el perfil de Anaconda fija activatable_modules: sin el módulo Runtime no se ejecuta ningún %post al instalar"; exit 1; }
 ! sed -n '/^default_partitioning/,/^[^[:space:]]/p' /etc/anaconda/profile.d/bookos.conf | grep -q '/boot' \
     || { echo "✗ default_partitioning pide /boot: con BTRFS la ESP saldría como subvolumen"; exit 1; }
 

@@ -25,6 +25,13 @@ pulseaudio-utils
 alsa-utils
 mesa-dri-drivers
 mesa-vulkan-drivers
+# VA-API de Intel (iHD). Ningún paquete de la imagen lo arrastra (en F44 solo
+# lo recomienda xpu-smi): sin él, el vídeo del navegador y los fondos animados
+# se decodifican por CPU (fondo.rs cae a software al no abrir VAAPI).
+libva-intel-media-driver
+# Sensor de luz ambiente (ISH): el brillo automático de bookos-comp lee los lux
+# de iio-sensor-proxy por D-Bus. Nada lo arrastra con --exclude-weakdeps.
+iio-sensor-proxy
 xorg-x11-server-Xwayland
 xdg-desktop-portal-gtk
 xdg-utils
@@ -171,8 +178,8 @@ for p in bookos-meta bookos-desktop bookos-greeter greetd bookos-shell \
     rpm -q "$p" >/dev/null 2>&1 || { echo "✗ paquete BookOS crítico ausente: $p (¿sin publicar en el repo?)"; exit 1; }
 done
 _welcome="$(rpm -q --qf '%{VERSION}-%{RELEASE}' bookos-welcome)"
-[ "$(printf '%s\n' 1.0.0-10 "${_welcome%%.fc*}" | sort -V | head -n1)" = 1.0.0-10 ] \
-    || { echo "✗ Bienvenida debe incluir el primer acceso con greetd (>= 1.0.0-10)"; exit 1; }
+[ "$(printf '%s\n' 1.0.0-11 "${_welcome%%.fc*}" | sort -V | head -n1)" = 1.0.0-11 ] \
+    || { echo "✗ Bienvenida debe etiquetar para SELinux la config de greetd del primer acceso (>= 1.0.0-11)"; exit 1; }
 for f in /usr/bin/bookos-session /usr/libexec/bookos-comp /usr/libexec/bookos-greeter \
          /usr/libexec/bookos-greeter-start /usr/libexec/bookos-cage; do
     [ -x "$f" ] || { echo "✗ falta el ejecutable de la sesión: $f"; exit 1; }

@@ -1,6 +1,6 @@
 Name:           bookos-branding
 Version:        0.6.2
-Release:        6%{?dist}
+Release:        8%{?dist}
 Summary:        BookOS branding (logos, wallpapers, SDDM/Plymouth themes)
 License:        LicenseRef-BookOS
 URL:            https://bookos.es/
@@ -57,6 +57,10 @@ install -dm755 %{buildroot}/usr/share/wallpapers/BookOS/Light
 install -dm755 %{buildroot}/usr/share/wallpapers/BookOS/Dark
 install -m644 wallpapers/Light/*.png %{buildroot}/usr/share/wallpapers/BookOS/Light/
 install -m644 wallpapers/Dark/*.png  %{buildroot}/usr/share/wallpapers/BookOS/Dark/
+# Los SVG son las miniaturas de Apariencia (fondos.rs): sin ellos la tarjeta
+# enseña los fondos como recuadros vacíos.
+install -m644 wallpapers/Light/*.svg %{buildroot}/usr/share/wallpapers/BookOS/Light/
+install -m644 wallpapers/Dark/*.svg  %{buildroot}/usr/share/wallpapers/BookOS/Dark/
 
 # Paquetes de wallpaper para el SELECTOR de Plasma (/usr/share/wallpapers).
 # Los archivos sueltos de /usr/share/backgrounds NO salen en el selector —
@@ -422,11 +426,70 @@ exit 0
 HOOK
 chmod 755 %{buildroot}/usr/lib/kernel/install.d/95-bookos-loaderentry.install
 
+# Otros Linux con BLS en el menú. os-prober 1.81 solo lee bloques `menuentry`
+# de grub.cfg, y el de Fedora no tiene ninguno (`blscfg` los saca en el
+# arranque de /boot/loader/entries): en el Book5 Pro salía Windows y no el
+# Fedora de al lado (2026-11-15). Se cede a su propio grub.cfg en vez de copiar
+# sus kernels, así sus actualizaciones siguen funcionando sin regenerar el
+# nuestro. Solo /boot separados (ext*/xfs), que es lo que crea Fedora.
+install -dm755 %{buildroot}/etc/grub.d
+cat > %{buildroot}/etc/grub.d/35_bookos_bls <<'GRUBD'
+#!/bin/sh
+set -e
+propio=$(findmnt -nro SOURCE --mountpoint /boot || findmnt -nro SOURCE --mountpoint /)
+lsblk -nrpo NAME,FSTYPE,UUID | while read -r dev tipo uuid; do
+    case "$tipo" in ext2|ext3|ext4|xfs) ;; *) continue ;; esac
+    [ -n "$uuid" ] && [ "$dev" != "$propio" ] || continue
+    dir=$(findmnt -nro TARGET --source "$dev" | head -n1)
+    montado=
+    if [ -z "$dir" ]; then
+        dir=$(mktemp -d)
+        mount -o ro "$dev" "$dir" 2>/dev/null || { rmdir "$dir"; continue; }
+        montado=1
+    fi
+    entrada=
+    if [ -f "$dir/grub2/grub.cfg" ]; then
+        # La entrada del kernel más nuevo que no sea de rescate, para arrancarla
+        # directamente: con `configfile` salía el GRUB de Fedora con su propio
+        # menú, un segundo menú tras elegir Fedora en el de BookOS.
+        entrada=$(grep -l '^linux' "$dir"/loader/entries/*.conf 2>/dev/null \
+            | grep -v rescue \
+            | while read -r e; do printf '%s %s\n' "$(sed -n 's/^version[[:space:]]*//p' "$e")" "$e"; done \
+            | sort -V | tail -n1 | cut -d' ' -f2-)
+    fi
+    if [ -n "$entrada" ]; then
+        # «Fedora Linux (6.17.1-300.fc44.x86_64) 44 (KDE…)» sin el kernel.
+        titulo=$(sed -n 's/^title[[:space:]]*//p' "$entrada" | head -n1 | sed 's/ ([^)]*)//')
+        linux=$(sed -n 's/^linux[[:space:]]*//p' "$entrada" | head -n1)
+        opciones=$(sed -n 's/^options[[:space:]]*//p' "$entrada" | head -n1)
+        initrd=$(sed -n 's/^initrd[[:space:]]*//p' "$entrada" | tr '\n' ' ')
+    fi
+    if [ -n "$montado" ]; then umount "$dir"; rmdir "$dir"; fi
+    [ -n "$entrada" ] && [ -n "$titulo" ] && [ -n "$linux" ] || continue
+    echo "Encontrado $titulo en $dev" >&2
+    # Si Fedora ya borró ese kernel y este menú no se ha regenerado, se cae a
+    # su propio menú en vez de fallar.
+    cat <<EOF
+menuentry '$(printf '%s' "$titulo" | sed "s/'/'\\\\''/g")' --class other {
+	search --no-floppy --fs-uuid --set=root $uuid
+	if [ -f $linux ]; then
+		linux $linux $opciones
+		initrd $initrd
+	else
+		configfile /grub2/grub.cfg
+	fi
+}
+EOF
+done
+GRUBD
+chmod 755 %{buildroot}/etc/grub.d/35_bookos_bls
+
 %files
 # /usr/libexec y /usr/lib/kernel/install.d ya los poseen filesystem y
 # systemd-udev, así que aquí solo van los ficheros.
 /usr/libexec/bookos-apply-identity
 /usr/lib/kernel/install.d/95-bookos-loaderentry.install
+/etc/grub.d/35_bookos_bls
 /usr/libexec/bookos-plymouth-language
 /usr/lib/systemd/system/bookos-plymouth-language.path
 /usr/lib/systemd/system/bookos-plymouth-language.service
@@ -515,6 +578,18 @@ true
 /usr/libexec/bookos-apply-identity 2>/dev/null || true
 
 %changelog
+* Sun Nov 15 2026 BookOS <packages@bookos.es> - 0.6.2-8
+- Instala los SVG de los fondos: son las miniaturas de Apariencia.
+- 35_bookos_bls arranca directamente el kernel más nuevo del otro Linux en vez
+  de cargar su GRUB con su propio menú.
+- Tema de GRUB al doble en themes/bookos/hidpi para paneles de 2560 px o más.
+
+* Sun Nov 15 2026 BookOS <packages@bookos.es> - 0.6.2-7
+- /etc/grub.d/35_bookos_bls: los Linux con BLS en otro /boot (Fedora) salen en
+  el menú; os-prober no los ve.
+- El perfil de Anaconda ya no exige una ESP de 500 MiB: con la de Windows
+  (200 MiB) no dejaba instalar.
+
 * Mon Oct 26 2026 BookOS <packages@bookos.es> - 0.6.2-6
 - El perfil de Anaconda ya no pide /boot ni /boot/efi: con BTRFS salían como
   subvolúmenes y la partición EFI quedaba dentro del btrfs, sin GRUB arrancable.

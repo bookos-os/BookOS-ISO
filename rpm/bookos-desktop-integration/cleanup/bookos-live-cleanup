@@ -17,7 +17,10 @@ if id liveuser >/dev/null 2>&1; then
         userdel -r liveuser 2>/dev/null || userdel liveuser 2>/dev/null || true
         rm -rf /home/liveuser
     else
+        # La cuenta la crea Bienvenida en el primer arranque, después de esto:
+        # sin marca, se repite en cada arranque hasta que exista y se borra.
         passwd -l liveuser 2>/dev/null || true
+        exit 0
     fi
 fi
 touch /var/lib/bookos-live-cleanup.done

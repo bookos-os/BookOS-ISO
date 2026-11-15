@@ -42,7 +42,7 @@ class AppCatalogTests(unittest.TestCase):
                     self.assertIn('mx.innerHTML=m?', script)
 
     def test_se_elige_gpui_y_se_conservan_los_servicios_necesarios(self):
-        self.assertEqual(set(catalog.GPUI), {'explorer', 'bookos-notepad', 'system-monitor', 'fonts', 'atmos'})
+        self.assertEqual(set(catalog.GPUI), {'explorer', 'bookos-notepad', 'system-monitor', 'fonts', 'atmos', 'BookOS-New'})
         self.assertEqual(len({app[1] for app in catalog.APPS}), len(catalog.APPS))
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
